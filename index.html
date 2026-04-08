@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spotify Playlist Helper</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Spotify Playlist Helper</h1>
+            <p>Analyze your Spotify playlists and discover insights about your music</p>
+        </header>
+
+        <main>
+            <!-- Credentials Section -->
+            <section id="credentials-section" class="card">
+                <h2>Spotify API Credentials</h2>
+                <form id="credentials-form">
+                    <div class="form-group">
+                        <label for="client-id">Client ID:</label>
+                        <input type="text" id="client-id" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="client-secret">Client Secret:</label>
+                        <input type="password" id="client-secret" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="redirect-uri">Redirect URI:</label>
+                        <input type="text" id="redirect-uri" placeholder="http://127.0.0.1:8080" required>
+                    </div>
+                    <button type="submit">Save & Authenticate</button>
+                </form>
+                <div id="auth-status" class="status-message"></div>
+            </section>
+
+            <!-- Queries Section -->
+            <section id="queries-section" class="card" style="display: none;">
+                <h2>Available Queries</h2>
+                <div class="query-list">
+                    <div class="query-item" data-query="liked-songs-not-in-playlists">
+                        <h3>Liked Songs Not in Playlists</h3>
+                        <p>Find all songs in your "Liked Songs" that are not included in any of your other playlists.</p>
+                        <button class="run-query-btn">Run Query</button>
+                    </div>
+                    <div class="query-item" data-query="all-liked-songs">
+                        <h3>All Liked Songs Analysis</h3>
+                        <p>View all your liked songs with music taste insights and analysis.</p>
+                        <button class="run-query-btn">Run Query</button>
+                    </div>
+                    <div class="query-item" data-query="artists-analysis">
+                        <h3>Artists Analysis</h3>
+                        <p>Explore all artists in your liked songs with song counts, genre distribution, and artist insights.</p>
+                        <button class="run-query-btn">Run Query</button>
+                    </div>
+                    <div class="query-item" data-query="playlist-browser">
+                        <h3>Playlist Browser</h3>
+                        <p>Browse all your playlists and view the songs in each one. Easily copy song lists for any playlist.</p>
+                        <button class="run-query-btn">Run Query</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section id="results-section" class="card" style="display: none;">
+                <h2>Query Results</h2>
+
+                <!-- Grouping Controls -->
+                <div id="grouping-controls" class="grouping-controls" style="display: none;">
+                    <h4>Group By:</h4>
+                    <div class="grouping-options">
+                        <button class="grouping-btn active" data-grouping="artist">Artist</button>
+                        <button class="grouping-btn" data-grouping="genre">Genre</button>
+                        <button class="grouping-btn" data-grouping="none">No Grouping</button>
+                    </div>
+                </div>
+
+                <div id="loading" class="loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Analyzing your Spotify data...</p>
+                </div>
+
+                <!-- Analytics Section -->
+                <div id="analytics-section" class="analytics-section" style="display: none;">
+                    <h3>Music Analytics</h3>
+                    <div class="analytics-grid">
+                        <div class="chart-container">
+                            <h4>Genre Distribution</h4>
+                            <canvas id="genreChart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h4>Top Artists</h4>
+                            <canvas id="artistChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="results-content">
+                    <!-- Results will be populated here -->
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
