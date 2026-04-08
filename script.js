@@ -7,6 +7,8 @@ class SpotifyPlaylistHelper {
         this.currentGrouping = 'artist';
         this.currentResults = null;
         this.currentSort = { column: null, direction: 'asc' };
+        this.currentFilters = { genres: new Set(), artistText: '', minPopularity: 0 };
+        this.filtersEnabled = false;
         this.init();
     }
 
@@ -264,7 +266,11 @@ class SpotifyPlaylistHelper {
 
         // Re-display results with new grouping if we have results
         if (this.currentResults) {
-            this.displayResults(this.currentResults.tracks, this.currentResults.totalLikedSongs, this.currentResults.totalPlaylistTracks);
+            if (this.filtersEnabled) {
+                this.refreshTable();
+            } else {
+                this.displayResults(this.currentResults.tracks, this.currentResults.totalLikedSongs, this.currentResults.totalPlaylistTracks);
+            }
         }
     }
 
@@ -285,6 +291,7 @@ class SpotifyPlaylistHelper {
         };
 
         this.currentSort = { column: null, direction: 'asc' };
+        this.resetFilters();
         this.showResultsSection();
         this.showLoading(true, loadingMessages[queryType] || 'Analyzing your Spotify data...');
 
@@ -328,6 +335,7 @@ class SpotifyPlaylistHelper {
             totalLikedSongs: likedSongs.length,
             totalPlaylistTracks: playlistTracks.length
         };
+        this.filtersEnabled = true;
 
         this.displayResults(enrichedTracks, likedSongs.length, playlistTracks.length);
     }
@@ -353,6 +361,7 @@ class SpotifyPlaylistHelper {
             isAnalysisMode: true,
             playlistMap
         };
+        this.filtersEnabled = true;
 
         // Generate analytics
         const analytics = this.generateAnalytics(enrichedTracks);
@@ -933,6 +942,89 @@ class SpotifyPlaylistHelper {
         }
     }
 
+    resetFilters() {
+        this.currentFilters = { genres: new Set(), artistText: '', minPopularity: 0 };
+        this.filtersEnabled = false;
+    }
+
+    applyFilters(tracks) {
+        if (!this.filtersEnabled) return tracks;
+        const { genres, artistText, minPopularity } = this.currentFilters;
+        return tracks.filter(track => {
+            if (genres.size > 0 && !track.genres.some(g => genres.has(g))) return false;
+            if (artistText && !track.artists.toLowerCase().includes(artistText.toLowerCase())) return false;
+            if ((track.popularity || 0) < minPopularity) return false;
+            return true;
+        });
+    }
+
+    handleFilterChange(type, value) {
+        if (type === 'genre') {
+            if (this.currentFilters.genres.has(value)) {
+                this.currentFilters.genres.delete(value);
+            } else {
+                this.currentFilters.genres.add(value);
+            }
+        } else if (type === 'artist') {
+            this.currentFilters.artistText = value;
+        } else if (type === 'popularity') {
+            this.currentFilters.minPopularity = Number(value);
+        } else if (type === 'clear') {
+            this.currentFilters = { genres: new Set(), artistText: '', minPopularity: 0 };
+        }
+        this.refreshTable();
+    }
+
+    refreshTable() {
+        const wasFocusedArtist = document.activeElement?.classList.contains('filter-text-input');
+        const el = document.getElementById('filter-table-area');
+        if (!el) return;
+        const tracks = this.currentResults.tracks;
+        el.innerHTML = this.generateFilterBar(tracks) + this.generateContinuousTable(tracks);
+        if (wasFocusedArtist) el.querySelector('.filter-text-input')?.focus();
+    }
+
+    generateFilterBar(tracks) {
+        const allGenres = [...new Set(tracks.flatMap(t => t.genres || []))]
+            .filter(g => g && g !== 'Unknown Genre')
+            .sort();
+        const { genres, artistText, minPopularity } = this.currentFilters;
+        const filteredCount = this.applyFilters(tracks).length;
+
+        const genrePills = allGenres.map(g => {
+            const active = genres.has(g) ? ' active' : '';
+            return `<button class="grouping-btn${active}" onclick="window._app.handleFilterChange('genre', ${JSON.stringify(g)})">${this.escapeHtml(g)}</button>`;
+        }).join('');
+
+        return `
+            <div class="filter-controls">
+                <div class="filter-row">
+                    <div class="filter-group">
+                        <label>Genre</label>
+                        <div class="filter-genre-pills">${genrePills || '<span style="font-size:12px;color:#888">No genre data</span>'}</div>
+                    </div>
+                </div>
+                <div class="filter-row">
+                    <div class="filter-group">
+                        <label>Artist</label>
+                        <input class="filter-text-input" type="text" placeholder="Search artist…" value="${this.escapeHtml(artistText)}"
+                               oninput="window._app.handleFilterChange('artist', this.value)">
+                    </div>
+                    <div class="filter-group">
+                        <label>Min Popularity</label>
+                        <div class="filter-slider-wrap">
+                            <input class="filter-slider" type="range" min="0" max="100" value="${minPopularity}"
+                                   oninput="window._app.handleFilterChange('popularity', this.value)">
+                            <span class="filter-slider-value">${minPopularity}</span>
+                        </div>
+                    </div>
+                    <span class="filter-count">${filteredCount} of ${tracks.length} tracks</span>
+                    <button class="filter-clear" onclick="window._app.handleFilterChange('clear', null)">Clear filters</button>
+                </div>
+            </div>
+        `;
+    }
+
     displayResults(tracks, totalLikedSongs, totalPlaylistTracks) {
         const resultsContent = document.getElementById('results-content');
         const analyticsSection = document.getElementById('analytics-section');
@@ -974,7 +1066,10 @@ class SpotifyPlaylistHelper {
         }
 
         if (tracks.length > 0 && !this.currentResults?.isArtistMode) {
+            html += `<div id="filter-table-area">`;
+            if (this.filtersEnabled) html += this.generateFilterBar(this.currentResults.tracks);
             html += this.generateContinuousTable(tracks);
+            html += `</div>`;
         } else if (this.currentResults?.isArtistMode) {
             // Artists table is displayed separately in displayArtistsTable
             html += '';
@@ -1008,12 +1103,17 @@ class SpotifyPlaylistHelper {
             this.currentSort = { column, direction: column === 'playlists' || column === 'popularity' ? 'desc' : 'asc' };
         }
         if (this.currentResults) {
-            this.displayResults(this.currentResults.tracks, this.currentResults.totalLikedSongs, this.currentResults.totalPlaylistTracks);
+            if (this.filtersEnabled) {
+                this.refreshTable();
+            } else {
+                this.displayResults(this.currentResults.tracks, this.currentResults.totalLikedSongs, this.currentResults.totalPlaylistTracks);
+            }
         }
     }
 
     generateContinuousTable(tracks) {
-        const sorted = this.sortedTracks(tracks);
+        const filtered = this.applyFilters(tracks);
+        const sorted = this.sortedTracks(filtered);
         const groupedTracks = this.groupTracksByType(sorted, this.currentGrouping);
         const sortedGroups = Object.keys(groupedTracks).sort();
         const isAnalysis = this.currentResults?.isAnalysisMode;

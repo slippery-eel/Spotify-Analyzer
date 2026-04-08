@@ -647,6 +647,124 @@ button:disabled {
     user-select: none;
 }
 
+/* ── Filter Controls ──────────────────────────────────────── */
+.filter-controls {
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+}
+
+.filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+    margin-bottom: 10px;
+}
+
+.filter-row:last-child {
+    margin-bottom: 0;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-group label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.filter-genre-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.filter-text-input {
+    padding: 6px 14px;
+    background: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 16px;
+    font-size: 13px;
+    color: #191414;
+    width: 180px;
+    transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.filter-text-input:focus {
+    outline: none;
+    border-color: rgba(29, 185, 84, 0.6);
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.filter-slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.filter-slider {
+    -webkit-appearance: none;
+    width: 120px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(0, 0, 0, 0.2);
+    outline: none;
+    cursor: pointer;
+}
+
+.filter-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #1db954;
+    cursor: pointer;
+}
+
+.filter-slider-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: #191414;
+    min-width: 28px;
+}
+
+.filter-count {
+    font-size: 12px;
+    color: #555;
+    align-self: center;
+    margin-left: auto;
+}
+
+.filter-clear {
+    font-size: 12px;
+    color: #1db954;
+    cursor: pointer;
+    text-decoration: underline;
+    background: none;
+    border: none;
+    padding: 0;
+    font-weight: 500;
+    box-shadow: none;
+    align-self: center;
+    transition: color 0.2s ease;
+}
+
+.filter-clear:hover {
+    color: #1ed760;
+    transform: none;
+    box-shadow: none;
+}
+
 .sortable:hover {
     background: rgba(255, 255, 255, 0.18) !important;
 }
