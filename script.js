@@ -7,13 +7,15 @@ class SpotifyPlaylistHelper {
         this.currentResults = null;
         this.currentSort = { column: null, direction: 'asc' };
         this.currentFilters = { genre: '', artistText: '', dedupeEnabled: true, dateFrom: '', dateTo: '' };
+        this.selectedTrackIds = new Set();
         this.filtersEnabled = false;
         this.dataCache = {
             enrichedLikedSongs: null,
             likedSongsCount: 0,
             playlistTracks: null,
             playlistMap: null,
-            playlistInfoAttached: false
+            playlistInfoAttached: false,
+            userId: null
         };
         this.init();
     }
@@ -198,7 +200,7 @@ class SpotifyPlaylistHelper {
             return;
         }
 
-        const scope = 'user-library-read playlist-read-private playlist-read-collaborative';
+        const scope = 'user-library-read playlist-read-private playlist-read-collaborative playlist-modify-private';
         const authUrl = `https://accounts.spotify.com/authorize?` +
             `client_id=${encodeURIComponent(this.clientId)}&` +
             `response_type=code&` +
@@ -697,18 +699,24 @@ class SpotifyPlaylistHelper {
         return tracks;
     }
 
-    async spotifyApiCall(url) {
+    async spotifyApiCall(url, options = {}) {
+        const { headers: optHeaders, ...restOptions } = options;
         const response = await fetch(url, {
             headers: {
-                'Authorization': `Bearer ${this.accessToken}`
-            }
+                'Authorization': `Bearer ${this.accessToken}`,
+                ...(optHeaders || {})
+            },
+            ...restOptions
         });
 
         if (!response.ok) {
-            if (response.status === 401) {
-                throw new Error('Access token expired. Please re-authenticate.');
-            }
-            throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+            const err = new Error(
+                response.status === 401
+                    ? 'Access token expired. Please re-authenticate.'
+                    : `API call failed: ${response.status} ${response.statusText}`
+            );
+            err.status = response.status;
+            throw err;
         }
 
         return response.json();
@@ -794,6 +802,40 @@ class SpotifyPlaylistHelper {
         return response.artists;
     }
 
+    async getCurrentUserId() {
+        if (this.dataCache.userId) return this.dataCache.userId;
+        const me = await this.spotifyApiCall('https://api.spotify.com/v1/me');
+        this.dataCache.userId = me.id;
+        return me.id;
+    }
+
+    async createSpotifyPlaylist(name) {
+        const userId = await this.getCurrentUserId();
+        const playlist = await this.spotifyApiCall(
+            `https://api.spotify.com/v1/users/${userId}/playlists`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, public: false, description: 'Created by Spotify Analyzer' })
+            }
+        );
+        return playlist.id;
+    }
+
+    async addTracksToSpotifyPlaylist(playlistId, trackIds) {
+        for (let i = 0; i < trackIds.length; i += 100) {
+            const batch = trackIds.slice(i, i + 100);
+            await this.spotifyApiCall(
+                `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uris: batch.map(id => `spotify:track:${id}`) })
+                }
+            );
+        }
+    }
+
     showResultsSection() {
         const resultsSection = document.getElementById('results-section');
         resultsSection.style.display = 'block';
@@ -810,6 +852,7 @@ class SpotifyPlaylistHelper {
 
     resetFilters() {
         this.currentFilters = { genre: '', artistText: '', dedupeEnabled: true, dateFrom: '', dateTo: '' };
+        this.selectedTrackIds = new Set();
         this.filtersEnabled = false;
     }
 
@@ -917,6 +960,8 @@ class SpotifyPlaylistHelper {
             if (this.currentFilters.dedupeEnabled && hidden > 0) label += ` (${hidden} duplicate${hidden > 1 ? 's' : ''} hidden)`;
             countEl.textContent = label;
         }
+        this.updateSelectAllState();
+        this.updateSaveButton();
     }
 
     generateFilterBar(tracks) {
@@ -1014,7 +1059,10 @@ class SpotifyPlaylistHelper {
         }
 
         if (tracks.length > 0) {
-            if (this.filtersEnabled) html += this.generateFilterBar(this.currentResults.tracks);
+            if (this.filtersEnabled) {
+                html += this.generateFilterBar(this.currentResults.tracks);
+                html += `<div style="margin-bottom:12px"><button id="save-playlist-btn" class="save-playlist-btn" onclick="window._app.handleSaveAsPlaylist()">Save as Playlist</button></div>`;
+            }
             html += `<div id="track-table-only">`;
             html += this.generateContinuousTable(tracks);
             html += `</div>`;
@@ -1078,6 +1126,7 @@ class SpotifyPlaylistHelper {
                 <table class="continuous-tracks-table">
                     <thead>
                         <tr>
+                            <th class="col-checkbox"><input type="checkbox" id="select-all-tracks" onchange="window._app.handleSelectAll(this.checked)" title="Select all visible"></th>
                             <th class="sortable" onclick="window._app.sortTable('name')">Track ${sortIcon('name')}</th>
                             <th class="sortable" onclick="window._app.sortTable('artists')">Artists ${sortIcon('artists')}</th>
                             <th>Genre</th>
@@ -1091,8 +1140,10 @@ class SpotifyPlaylistHelper {
         `;
 
         sorted.forEach(track => {
+            const checked = this.selectedTrackIds.has(track.id) ? 'checked' : '';
             html += `
-                <tr class="track-row">
+                <tr class="track-row${this.selectedTrackIds.has(track.id) ? ' row-selected' : ''}">
+                    <td class="col-checkbox"><input type="checkbox" class="track-select" data-id="${track.id}" ${checked} onchange="window._app.handleTrackSelect('${track.id}', this.checked)"></td>
                     <td class="track-name">${this.escapeHtml(track.name)}</td>
                     <td class="track-artist">${this.escapeHtml(track.artists)}</td>
                     <td class="track-genre">${this.escapeHtml((track.genres || []).filter(g => g !== 'Unknown Genre').join(', ') || '—')}</td>
@@ -1308,6 +1359,112 @@ class SpotifyPlaylistHelper {
         });
     }
 
+
+    handleTrackSelect(trackId, checked) {
+        if (checked) this.selectedTrackIds.add(trackId);
+        else this.selectedTrackIds.delete(trackId);
+        this.updateSelectAllState();
+        this.updateSaveButton();
+    }
+
+    handleSelectAll(checked) {
+        const visible = this.sortedTracks(this.applyFilters(this.currentResults.tracks));
+        visible.forEach(t => checked ? this.selectedTrackIds.add(t.id) : this.selectedTrackIds.delete(t.id));
+        this.refreshTable();
+    }
+
+    updateSelectAllState() {
+        const selectAll = document.getElementById('select-all-tracks');
+        if (!selectAll) return;
+        const visible = this.sortedTracks(this.applyFilters(this.currentResults.tracks));
+        const selectedVisible = visible.filter(t => this.selectedTrackIds.has(t.id));
+        if (selectedVisible.length === 0) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+        } else if (selectedVisible.length === visible.length) {
+            selectAll.checked = true;
+            selectAll.indeterminate = false;
+        } else {
+            selectAll.checked = false;
+            selectAll.indeterminate = true;
+        }
+    }
+
+    updateSaveButton() {
+        const btn = document.getElementById('save-playlist-btn');
+        if (!btn) return;
+        const n = this.selectedTrackIds.size;
+        btn.textContent = n > 0 ? `Save ${n} selected as Playlist` : 'Save as Playlist';
+    }
+
+    handleSaveAsPlaylist() {
+        const hasSelection = this.selectedTrackIds.size > 0;
+        const tracks = hasSelection
+            ? this.currentResults.tracks.filter(t => this.selectedTrackIds.has(t.id))
+            : this.applyFilters(this.currentResults.tracks);
+        const defaultName = this.currentResults.isAnalysisMode ? 'All Liked Songs' : 'Liked Songs Not In Playlists';
+        this.openPlaylistModal(defaultName, tracks.length);
+    }
+
+    openPlaylistModal(defaultName, trackCount) {
+        const modal = document.getElementById('playlist-modal');
+        const subtitle = document.getElementById('playlist-modal-subtitle');
+        const input = document.getElementById('playlist-name-input');
+        const status = document.getElementById('playlist-modal-status');
+        subtitle.textContent = `Save ${trackCount} track${trackCount !== 1 ? 's' : ''} to a new private playlist`;
+        input.value = defaultName;
+        status.textContent = '';
+        status.className = '';
+        document.getElementById('playlist-confirm-btn').disabled = false;
+        document.getElementById('playlist-confirm-btn').textContent = 'Create Playlist';
+        modal.style.display = 'flex';
+        input.focus();
+        input.select();
+    }
+
+    closePlaylistModal() {
+        document.getElementById('playlist-modal').style.display = 'none';
+    }
+
+    async confirmPlaylistCreate() {
+        const name = document.getElementById('playlist-name-input').value.trim();
+        const statusEl = document.getElementById('playlist-modal-status');
+        const confirmBtn = document.getElementById('playlist-confirm-btn');
+
+        if (!name) {
+            statusEl.textContent = 'Please enter a playlist name.';
+            statusEl.className = 'status-message error';
+            return;
+        }
+
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Creating…';
+        statusEl.textContent = '';
+        statusEl.className = '';
+
+        const hasSelection = this.selectedTrackIds.size > 0;
+        const filtered = hasSelection
+            ? this.currentResults.tracks.filter(t => this.selectedTrackIds.has(t.id))
+            : this.applyFilters(this.currentResults.tracks);
+        const trackIds = filtered.map(t => t.id).filter(Boolean);
+
+        try {
+            const playlistId = await this.createSpotifyPlaylist(name);
+            await this.addTracksToSpotifyPlaylist(playlistId, trackIds);
+            statusEl.innerHTML = `Playlist <strong>${this.escapeHtml(name)}</strong> created with ${trackIds.length} tracks — <a href="https://open.spotify.com/playlist/${playlistId}" target="_blank" rel="noopener noreferrer" style="color:#1db954">Open in Spotify</a>`;
+            statusEl.className = 'status-message success';
+            confirmBtn.textContent = 'Done';
+        } catch (err) {
+            if (err.status === 403 || err.status === 401) {
+                statusEl.innerHTML = 'Session expired or missing playlist write scope. <button onclick="window._app.initiateSpotifyAuth()" style="margin-left:8px">Re-authenticate</button>';
+            } else {
+                statusEl.textContent = 'Error: ' + err.message;
+            }
+            statusEl.className = 'status-message error';
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Create Playlist';
+        }
+    }
 
     createTimelineChart(analytics) {
         const { likedByPeriod } = analytics;
