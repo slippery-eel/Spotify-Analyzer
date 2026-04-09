@@ -8,6 +8,13 @@ class SpotifyPlaylistHelper {
         this.currentSort = { column: null, direction: 'asc' };
         this.currentFilters = { genre: '', artistText: '', dedupeEnabled: true };
         this.filtersEnabled = false;
+        this.dataCache = {
+            enrichedLikedSongs: null,
+            likedSongsCount: 0,
+            playlistTracks: null,
+            playlistMap: null,
+            playlistInfoAttached: false
+        };
         this.init();
     }
 
@@ -291,56 +298,85 @@ class SpotifyPlaylistHelper {
         }
     }
 
-    async findLikedSongsNotInPlaylists() {
+    async ensureLikedSongsCache() {
+        if (this.dataCache.enrichedLikedSongs) return;
         const likedSongs = await this.getLikedSongs();
-        const playlistTracks = await this.getAllPlaylistTracks();
-
-        const playlistTrackIds = new Set(playlistTracks.map(t => t.id));
-        const uniqueLikedSongs = likedSongs.filter(t => !playlistTrackIds.has(t.id));
-
-        // Enrich tracks with genre data
-        const enrichedTracks = await this.enrichTracksWithGenres(uniqueLikedSongs);
-
-        this.currentResults = {
-            tracks: enrichedTracks,
-            playlistTracks: playlistTracks,
-            totalLikedSongs: likedSongs.length,
-            totalPlaylistTracks: playlistTracks.length
-        };
-        this.filtersEnabled = true;
-
-        this.displayResults(enrichedTracks, likedSongs.length, playlistTracks.length);
+        this.dataCache.likedSongsCount = likedSongs.length;
+        this.dataCache.enrichedLikedSongs = await this.enrichTracksWithGenres(likedSongs);
+        if (this.dataCache.playlistMap && !this.dataCache.playlistInfoAttached) {
+            this.attachPlaylistInfo();
+        }
     }
 
-    async getAllLikedSongsAnalysis() {
-        const likedSongs = await this.getLikedSongs();
+    async ensurePlaylistCache() {
+        if (this.dataCache.playlistTracks) return;
+        const playlists = await this.getUserPlaylists();
+        const allTracks = [];
+        const map = new Map();
+        for (const playlist of playlists) {
+            const tracks = await this.getPlaylistTracks(playlist.id);
+            for (const track of tracks) {
+                allTracks.push(track);
+                if (!map.has(track.id)) map.set(track.id, []);
+                map.get(track.id).push(playlist.name);
+            }
+        }
+        this.dataCache.playlistTracks = allTracks;
+        this.dataCache.playlistMap = map;
+        if (this.dataCache.enrichedLikedSongs && !this.dataCache.playlistInfoAttached) {
+            this.attachPlaylistInfo();
+        }
+    }
 
-        // Enrich tracks with genre data
-        const enrichedTracks = await this.enrichTracksWithGenres(likedSongs);
-
-        // Fetch playlist membership for each track
-        const playlistMap = await this.getPlaylistTrackMap();
-        enrichedTracks.forEach(track => {
+    attachPlaylistInfo() {
+        const { enrichedLikedSongs, playlistMap } = this.dataCache;
+        if (!enrichedLikedSongs || !playlistMap || this.dataCache.playlistInfoAttached) return;
+        enrichedLikedSongs.forEach(track => {
             const playlists = playlistMap.get(track.id) ?? [];
             track.playlistCount = playlists.length;
             track.playlistNames = playlists;
         });
+        this.dataCache.playlistInfoAttached = true;
+    }
+
+    async findLikedSongsNotInPlaylists() {
+        await Promise.all([this.ensureLikedSongsCache(), this.ensurePlaylistCache()]);
+        this.attachPlaylistInfo();
+
+        const playlistTrackIds = new Set(this.dataCache.playlistTracks.map(t => t.id));
+        const notInPlaylists = this.dataCache.enrichedLikedSongs.filter(t => !playlistTrackIds.has(t.id));
 
         this.currentResults = {
-            tracks: enrichedTracks,
-            totalLikedSongs: likedSongs.length,
-            totalPlaylistTracks: 0,
-            isAnalysisMode: true,
-            playlistMap
+            tracks: notInPlaylists,
+            playlistTracks: this.dataCache.playlistTracks,
+            totalLikedSongs: this.dataCache.likedSongsCount,
+            totalPlaylistTracks: this.dataCache.playlistTracks.length
         };
         this.filtersEnabled = true;
 
-        // Generate analytics
+        this.displayResults(notInPlaylists, this.dataCache.likedSongsCount, this.dataCache.playlistTracks.length);
+    }
+
+    async getAllLikedSongsAnalysis() {
+        await Promise.all([this.ensureLikedSongsCache(), this.ensurePlaylistCache()]);
+        this.attachPlaylistInfo();
+
+        const enrichedTracks = this.dataCache.enrichedLikedSongs;
+
+        this.currentResults = {
+            tracks: enrichedTracks,
+            totalLikedSongs: this.dataCache.likedSongsCount,
+            totalPlaylistTracks: 0,
+            isAnalysisMode: true,
+            playlistMap: this.dataCache.playlistMap
+        };
+        this.filtersEnabled = true;
+
         const analytics = this.generateAnalytics(enrichedTracks);
         this.currentResults.analytics = analytics;
 
         this.displayAnalytics(analytics);
-        this.displayResults(enrichedTracks, likedSongs.length, 0);
+        this.displayResults(enrichedTracks, this.dataCache.likedSongsCount, 0);
     }
 
 
