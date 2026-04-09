@@ -149,9 +149,12 @@ button:disabled {
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 12px;
-    padding: 25px;
+    padding: 16px 20px;
     transition: all 0.3s ease;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 16px;
 }
 
 .query-item:hover {
@@ -161,15 +164,21 @@ button:disabled {
     transform: translateY(-2px);
 }
 
+.query-item-text {
+    flex: 1;
+}
+
 .query-item h3 {
     color: #191414;
-    margin-bottom: 10px;
+    margin-bottom: 4px;
+    font-size: 1rem;
 }
 
 .query-item p {
     color: #666;
-    margin-bottom: 15px;
-    line-height: 1.5;
+    margin-bottom: 0;
+    line-height: 1.4;
+    font-size: 0.875rem;
 }
 
 .run-query-btn {
@@ -771,19 +780,65 @@ button:disabled {
     padding: 8px 6px !important;
 }
 
+/* Custom checkbox — hides native, shows styled pseudo-element */
 .track-select {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1.5px solid rgba(100, 100, 100, 0.3);
+    background: rgba(255, 255, 255, 0.5);
     cursor: pointer;
-    width: 15px;
-    height: 15px;
-    accent-color: #1db954;
+    vertical-align: middle;
+    position: relative;
+    transition: border-color 0.15s ease, background 0.15s ease;
+    flex-shrink: 0;
+}
+
+.track-select:hover {
+    border-color: rgba(29, 185, 84, 0.6);
+    background: rgba(255, 255, 255, 0.75);
+}
+
+.track-select:checked {
+    background: #1db954;
+    border-color: #1db954;
+}
+
+.track-select:checked::after {
+    content: '';
+    display: block;
+    width: 4px;
+    height: 7px;
+    border: 2px solid white;
+    border-top: none;
+    border-left: none;
+    transform: rotate(45deg) translate(1px, -1px);
+    margin: 1px auto 0;
+}
+
+.track-select:indeterminate {
+    background: rgba(29, 185, 84, 0.4);
+    border-color: rgba(29, 185, 84, 0.7);
+}
+
+.track-select:indeterminate::after {
+    content: '';
+    display: block;
+    width: 8px;
+    height: 2px;
+    background: white;
+    margin: 5px auto 0;
+    border-radius: 1px;
 }
 
 .row-selected {
-    background: rgba(29, 185, 84, 0.08) !important;
+    background: rgba(29, 185, 84, 0.07) !important;
 }
 
 .row-selected:hover {
-    background: rgba(29, 185, 84, 0.14) !important;
+    background: rgba(29, 185, 84, 0.13) !important;
 }
 
 .sortable:hover {
