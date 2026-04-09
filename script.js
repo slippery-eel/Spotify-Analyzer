@@ -261,7 +261,6 @@ class SpotifyPlaylistHelper {
         const loadingMessages = {
             'liked-songs-not-in-playlists': 'Finding liked songs not in any playlist…',
             'all-liked-songs': 'Loading all liked songs…',
-            'artists-analysis': 'Analyzing your artists…',
             'playlist-browser': 'Fetching your playlists…'
         };
 
@@ -277,9 +276,6 @@ class SpotifyPlaylistHelper {
                     break;
                 case 'all-liked-songs':
                     await this.getAllLikedSongsAnalysis();
-                    break;
-                case 'artists-analysis':
-                    await this.getArtistsAnalysis();
                     break;
                 case 'playlist-browser':
                     await this.browsePlaylistsMode();
@@ -346,108 +342,6 @@ class SpotifyPlaylistHelper {
         this.displayResults(enrichedTracks, likedSongs.length, 0);
     }
 
-    async getArtistsAnalysis() {
-        const likedSongs = await this.getLikedSongs();
-
-        // Enrich tracks with genre data
-        const enrichedTracks = await this.enrichTracksWithGenres(likedSongs);
-
-        // Generate artist-focused data
-        const artistsData = this.generateArtistsData(enrichedTracks);
-
-        this.currentResults = {
-            tracks: enrichedTracks,
-            artistsData: artistsData,
-            totalLikedSongs: likedSongs.length,
-            isArtistMode: true
-        };
-
-        // Generate analytics for charts
-        const analytics = this.generateAnalytics(enrichedTracks);
-        this.currentResults.analytics = analytics;
-
-        this.displayAnalytics(analytics);
-        this.displayArtistsTable(artistsData);
-    }
-
-    generateArtistsData(tracks) {
-        const artistCounts = {};
-        const artistGenres = {};
-
-        tracks.forEach(track => {
-            // Handle multiple artists per track
-            const artistNames = track.artists.split(', ');
-            const artistIds = track.artistIds || [];
-
-            artistNames.forEach((artistName, index) => {
-                const trimmedName = artistName.trim();
-
-                if (!artistCounts[trimmedName]) {
-                    artistCounts[trimmedName] = 0;
-                    artistGenres[trimmedName] = new Set();
-                }
-
-                artistCounts[trimmedName]++;
-
-                // Add genres for this artist
-                if (track.genres && track.genres.length > 0) {
-                    track.genres.forEach(genre => {
-                        if (genre !== 'Unknown Genre') {
-                            artistGenres[trimmedName].add(genre);
-                        }
-                    });
-                }
-            });
-        });
-
-        // Convert to array and sort by song count
-        const artistsArray = Object.entries(artistCounts).map(([name, count]) => ({
-            name: name,
-            songCount: count,
-            genres: Array.from(artistGenres[name] || [])
-        })).sort((a, b) => b.songCount - a.songCount);
-
-        return artistsArray;
-    }
-
-    displayArtistsTable(artistsData) {
-        const resultsContent = document.getElementById('results-content');
-
-        let html = `
-            <div class="continuous-table-container">
-                <table class="continuous-tracks-table">
-                    <thead>
-                        <tr>
-                            <th>Artist</th>
-                            <th>Songs</th>
-                            <th>Genres</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-
-        artistsData.forEach(artist => {
-            const genresText = artist.genres.length > 0
-                ? artist.genres.slice(0, 3).join(', ') + (artist.genres.length > 3 ? '...' : '')
-                : 'No genres';
-
-            html += `
-                <tr class="track-row">
-                    <td class="artist-name">${this.escapeHtml(artist.name)}</td>
-                    <td class="song-count">${artist.songCount}</td>
-                    <td class="artist-genres">${this.escapeHtml(genresText)}</td>
-                </tr>
-            `;
-        });
-
-        html += `
-                    </tbody>
-                </table>
-            </div>
-        `;
-
-        resultsContent.innerHTML = html;
-    }
 
     async browsePlaylistsMode() {
         const playlists = await this.getUserPlaylists();
@@ -962,7 +856,7 @@ class SpotifyPlaylistHelper {
         const analyticsSection = document.getElementById('analytics-section');
 
         // Hide analytics section for non-analytics queries
-        if (!this.currentResults?.isAnalysisMode && !this.currentResults?.isArtistMode) {
+        if (!this.currentResults?.isAnalysisMode) {
             analyticsSection.style.display = 'none';
         }
 
@@ -978,15 +872,6 @@ class SpotifyPlaylistHelper {
                 </div>
             `;
             html += this.generateCoverageBar(tracks, totalLikedSongs);
-        } else if (this.currentResults?.isArtistMode) {
-            const analytics = this.currentResults.analytics;
-
-            html += `
-                <div class="results-summary">
-                    <strong>Artists Analysis Complete!</strong><br>
-                    Found ${this.currentResults.artistsData?.length || 0} unique artists from ${totalLikedSongs} liked songs with ${analytics?.uniqueGenres || 0} unique genres.<br>
-                </div>
-            `;
         } else {
             html += `
                 <div class="results-summary">
@@ -997,14 +882,11 @@ class SpotifyPlaylistHelper {
             `;
         }
 
-        if (tracks.length > 0 && !this.currentResults?.isArtistMode) {
+        if (tracks.length > 0) {
             if (this.filtersEnabled) html += this.generateFilterBar(this.currentResults.tracks);
             html += `<div id="track-table-only">`;
             html += this.generateContinuousTable(tracks);
             html += `</div>`;
-        } else if (this.currentResults?.isArtistMode) {
-            // Artists table is displayed separately in displayArtistsTable
-            html += '';
         } else {
             html += '<p>All your liked songs are already in your playlists!</p>';
         }
