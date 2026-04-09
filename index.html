@@ -94,6 +94,30 @@
         </main>
     </div>
 
+    <div id="playlist-modal" class="playlist-modal" style="display:none">
+        <div class="playlist-modal-inner">
+            <h3>Save as Playlist</h3>
+            <p id="playlist-modal-subtitle"></p>
+            <div class="playlist-mode-toggle">
+                <button id="mode-btn-new" class="mode-btn active" onclick="window._app.setPlaylistMode('new')">New Playlist</button>
+                <button id="mode-btn-existing" class="mode-btn" onclick="window._app.setPlaylistMode('existing')">Add to Existing</button>
+            </div>
+            <div id="new-playlist-section">
+                <input id="playlist-name-input" class="filter-text-input" type="text" placeholder="Playlist name…" style="width:100%;margin:12px 0">
+            </div>
+            <div id="existing-playlist-section" style="display:none">
+                <select id="existing-playlist-select" class="filter-select" style="width:100%;margin:12px 0;min-width:unset">
+                    <option value="">Loading playlists…</option>
+                </select>
+            </div>
+            <div class="playlist-modal-actions">
+                <button id="playlist-confirm-btn" onclick="window._app.confirmPlaylistCreate()">Create Playlist</button>
+                <button onclick="window._app.closePlaylistModal()" class="filter-clear" style="margin-left:12px">Cancel</button>
+            </div>
+            <div id="playlist-modal-status" style="margin-top:12px"></div>
+        </div>
+    </div>
+
     <script src="script.js"></script>
 </body>
 </html>

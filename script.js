@@ -200,7 +200,7 @@ class SpotifyPlaylistHelper {
             return;
         }
 
-        const scope = 'user-library-read playlist-read-private playlist-read-collaborative playlist-modify-private';
+        const scope = 'user-library-read playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public';
         const authUrl = `https://accounts.spotify.com/authorize?` +
             `client_id=${encodeURIComponent(this.clientId)}&` +
             `response_type=code&` +
@@ -1406,64 +1406,110 @@ class SpotifyPlaylistHelper {
         this.openPlaylistModal(defaultName, tracks.length);
     }
 
-    openPlaylistModal(defaultName, trackCount) {
+    async openPlaylistModal(defaultName, trackCount) {
         const modal = document.getElementById('playlist-modal');
-        const subtitle = document.getElementById('playlist-modal-subtitle');
-        const input = document.getElementById('playlist-name-input');
-        const status = document.getElementById('playlist-modal-status');
-        subtitle.textContent = `Save ${trackCount} track${trackCount !== 1 ? 's' : ''} to a new private playlist`;
-        input.value = defaultName;
-        status.textContent = '';
-        status.className = '';
+        document.getElementById('playlist-modal-subtitle').textContent = `Save ${trackCount} track${trackCount !== 1 ? 's' : ''}`;
+        document.getElementById('playlist-name-input').value = defaultName;
+        document.getElementById('playlist-modal-status').textContent = '';
+        document.getElementById('playlist-modal-status').className = '';
         document.getElementById('playlist-confirm-btn').disabled = false;
-        document.getElementById('playlist-confirm-btn').textContent = 'Create Playlist';
+        this.setPlaylistMode('new');
         modal.style.display = 'flex';
+        const input = document.getElementById('playlist-name-input');
         input.focus();
         input.select();
+
+        // Fetch existing playlists for the "Add to Existing" tab in background
+        const selectEl = document.getElementById('existing-playlist-select');
+        selectEl.innerHTML = '<option value="">Loading…</option>';
+        try {
+            const playlists = await this.getUserPlaylists();
+            selectEl.innerHTML = playlists.length
+                ? playlists.map(p => `<option value="${p.id}">${this.escapeHtml(p.name)}</option>`).join('')
+                : '<option value="">No playlists found</option>';
+        } catch (e) {
+            selectEl.innerHTML = '<option value="">Failed to load playlists</option>';
+        }
     }
 
     closePlaylistModal() {
         document.getElementById('playlist-modal').style.display = 'none';
     }
 
+    setPlaylistMode(mode) {
+        this._playlistMode = mode;
+        document.getElementById('new-playlist-section').style.display = mode === 'new' ? 'block' : 'none';
+        document.getElementById('existing-playlist-section').style.display = mode === 'existing' ? 'block' : 'none';
+        document.getElementById('mode-btn-new').classList.toggle('active', mode === 'new');
+        document.getElementById('mode-btn-existing').classList.toggle('active', mode === 'existing');
+        document.getElementById('playlist-confirm-btn').textContent = mode === 'new' ? 'Create Playlist' : 'Add to Playlist';
+    }
+
     async confirmPlaylistCreate() {
-        const name = document.getElementById('playlist-name-input').value.trim();
         const statusEl = document.getElementById('playlist-modal-status');
         const confirmBtn = document.getElementById('playlist-confirm-btn');
 
-        if (!name) {
-            statusEl.textContent = 'Please enter a playlist name.';
-            statusEl.className = 'status-message error';
-            return;
-        }
-
-        confirmBtn.disabled = true;
-        confirmBtn.textContent = 'Creating…';
-        statusEl.textContent = '';
-        statusEl.className = '';
-
+        // Compute the tracks to save (selected if any, otherwise all filtered)
         const hasSelection = this.selectedTrackIds.size > 0;
         const filtered = hasSelection
             ? this.currentResults.tracks.filter(t => this.selectedTrackIds.has(t.id))
             : this.applyFilters(this.currentResults.tracks);
         const trackIds = filtered.map(t => t.id).filter(Boolean);
 
+        statusEl.textContent = '';
+        statusEl.className = '';
+
+        if (this._playlistMode === 'existing') {
+            const selectEl = document.getElementById('existing-playlist-select');
+            const playlistId = selectEl.value;
+            const playlistName = selectEl.options[selectEl.selectedIndex]?.text || '';
+            if (!playlistId) {
+                statusEl.textContent = 'Please select a playlist.';
+                statusEl.className = 'status-message error';
+                return;
+            }
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Adding…';
+            try {
+                await this.addTracksToSpotifyPlaylist(playlistId, trackIds);
+                statusEl.innerHTML = `Added ${trackIds.length} track${trackIds.length !== 1 ? 's' : ''} to <strong>${this.escapeHtml(playlistName)}</strong> — <a href="https://open.spotify.com/playlist/${playlistId}" target="_blank" rel="noopener noreferrer" style="color:#1db954">Open in Spotify</a>`;
+                statusEl.className = 'status-message success';
+                confirmBtn.textContent = 'Done';
+            } catch (err) {
+                this._handlePlaylistError(err, statusEl, confirmBtn, 'Add to Playlist');
+            }
+            return;
+        }
+
+        // New playlist mode
+        const name = document.getElementById('playlist-name-input').value.trim();
+        if (!name) {
+            statusEl.textContent = 'Please enter a playlist name.';
+            statusEl.className = 'status-message error';
+            return;
+        }
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Creating…';
         try {
             const playlistId = await this.createSpotifyPlaylist(name);
             await this.addTracksToSpotifyPlaylist(playlistId, trackIds);
-            statusEl.innerHTML = `Playlist <strong>${this.escapeHtml(name)}</strong> created with ${trackIds.length} tracks — <a href="https://open.spotify.com/playlist/${playlistId}" target="_blank" rel="noopener noreferrer" style="color:#1db954">Open in Spotify</a>`;
+            statusEl.innerHTML = `Playlist <strong>${this.escapeHtml(name)}</strong> created with ${trackIds.length} track${trackIds.length !== 1 ? 's' : ''} — <a href="https://open.spotify.com/playlist/${playlistId}" target="_blank" rel="noopener noreferrer" style="color:#1db954">Open in Spotify</a>`;
             statusEl.className = 'status-message success';
             confirmBtn.textContent = 'Done';
         } catch (err) {
-            if (err.status === 403 || err.status === 401) {
-                statusEl.innerHTML = 'Session expired or missing playlist write scope. <button onclick="window._app.initiateSpotifyAuth()" style="margin-left:8px">Re-authenticate</button>';
-            } else {
-                statusEl.textContent = 'Error: ' + err.message;
-            }
-            statusEl.className = 'status-message error';
-            confirmBtn.disabled = false;
-            confirmBtn.textContent = 'Create Playlist';
+            this._handlePlaylistError(err, statusEl, confirmBtn, 'Create Playlist');
         }
+    }
+
+    _handlePlaylistError(err, statusEl, confirmBtn, retryLabel) {
+        if (err.status === 403 || err.status === 401) {
+            statusEl.innerHTML = 'Session expired or missing playlist write scope. <button onclick="window._app.initiateSpotifyAuth()" style="margin-left:8px">Re-authenticate</button>';
+        } else {
+            statusEl.textContent = 'Error: ' + err.message;
+        }
+        statusEl.className = 'status-message error';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = retryLabel;
     }
 
     createTimelineChart(analytics) {
