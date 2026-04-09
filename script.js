@@ -6,7 +6,7 @@ class SpotifyPlaylistHelper {
         this.accessToken = null;
         this.currentResults = null;
         this.currentSort = { column: null, direction: 'asc' };
-        this.currentFilters = { genre: '', artistText: '', dedupeEnabled: true };
+        this.currentFilters = { genre: '', artistText: '', dedupeEnabled: true, dateFrom: '', dateTo: '' };
         this.filtersEnabled = false;
         this.dataCache = {
             enrichedLikedSongs: null,
@@ -623,7 +623,8 @@ class SpotifyPlaylistHelper {
                 name: item.track.name,
                 artists: item.track.artists.map(artist => artist.name).join(', '),
                 artistIds: item.track.artists.map(artist => artist.id),
-                url: item.track.external_urls.spotify
+                url: item.track.external_urls.spotify,
+                addedAt: item.added_at
             })));
             url = response.next;
         }
@@ -808,7 +809,7 @@ class SpotifyPlaylistHelper {
 
 
     resetFilters() {
-        this.currentFilters = { genre: '', artistText: '', dedupeEnabled: true };
+        this.currentFilters = { genre: '', artistText: '', dedupeEnabled: true, dateFrom: '', dateTo: '' };
         this.filtersEnabled = false;
     }
 
@@ -868,10 +869,12 @@ class SpotifyPlaylistHelper {
 
     applyFilters(tracks) {
         if (!this.filtersEnabled) return tracks;
-        const { genre, artistText, dedupeEnabled } = this.currentFilters;
+        const { genre, artistText, dedupeEnabled, dateFrom, dateTo } = this.currentFilters;
         let result = dedupeEnabled ? this.deduplicateTracks(tracks) : tracks;
         if (genre) result = result.filter(t => (t.genres || []).includes(genre));
         if (artistText) result = result.filter(t => t.artists.toLowerCase().includes(artistText.toLowerCase()));
+        if (dateFrom) result = result.filter(t => (t.addedAt || '').slice(0, 7) >= dateFrom);
+        if (dateTo) result = result.filter(t => (t.addedAt || '').slice(0, 7) <= dateTo);
         return result;
     }
 
@@ -882,12 +885,20 @@ class SpotifyPlaylistHelper {
             this.currentFilters.artistText = value;
         } else if (type === 'dedup') {
             this.currentFilters.dedupeEnabled = !this.currentFilters.dedupeEnabled;
+        } else if (type === 'dateFrom') {
+            this.currentFilters.dateFrom = value;
+        } else if (type === 'dateTo') {
+            this.currentFilters.dateTo = value;
         } else if (type === 'clear') {
-            this.currentFilters = { genre: '', artistText: '', dedupeEnabled: this.currentFilters.dedupeEnabled };
+            this.currentFilters = { genre: '', artistText: '', dedupeEnabled: this.currentFilters.dedupeEnabled, dateFrom: '', dateTo: '' };
             const genreEl = document.getElementById('genre-filter');
             const artistEl = document.getElementById('artist-filter');
+            const dateFromEl = document.getElementById('date-from');
+            const dateToEl = document.getElementById('date-to');
             if (genreEl) genreEl.value = '';
             if (artistEl) artistEl.value = '';
+            if (dateFromEl) dateFromEl.value = '';
+            if (dateToEl) dateToEl.value = '';
         }
         this.refreshTable();
     }
@@ -922,7 +933,7 @@ class SpotifyPlaylistHelper {
             .map(a => `<option value="${this.escapeHtml(a)}">`)
             .join('');
 
-        const { dedupeEnabled } = this.currentFilters;
+        const { dedupeEnabled, dateFrom, dateTo } = this.currentFilters;
         const filtered = this.applyFilters(tracks);
         const dedupedOnly = dedupeEnabled ? this.deduplicateTracks(tracks) : tracks;
         const hidden = tracks.length - dedupedOnly.length;
@@ -953,6 +964,16 @@ class SpotifyPlaylistHelper {
                         <button class="filter-toggle-btn${dedupActive}" onclick="window._app.handleFilterChange('dedup', null)">
                             ${dedupeEnabled ? 'Hidden' : 'Shown'}
                         </button>
+                    </div>
+                    <div class="filter-group">
+                        <label for="date-from">Added After</label>
+                        <input id="date-from" type="month" class="filter-select"
+                               value="${dateFrom}" onchange="window._app.handleFilterChange('dateFrom', this.value)">
+                    </div>
+                    <div class="filter-group">
+                        <label for="date-to">Added Before</label>
+                        <input id="date-to" type="month" class="filter-select"
+                               value="${dateTo}" onchange="window._app.handleFilterChange('dateTo', this.value)">
                     </div>
                     <span id="filter-track-count" class="filter-count">${countLabel}</span>
                     <button class="filter-clear" onclick="window._app.handleFilterChange('clear', null)">Clear</button>
@@ -1014,6 +1035,7 @@ class SpotifyPlaylistHelper {
             else if (column === 'artists') { aVal = a.artists.toLowerCase(); bVal = b.artists.toLowerCase(); }
             else if (column === 'popularity') { aVal = a.popularity || 0; bVal = b.popularity || 0; }
             else if (column === 'playlists') { aVal = a.playlistCount || 0; bVal = b.playlistCount || 0; }
+            else if (column === 'added') { aVal = a.addedAt || ''; bVal = b.addedAt || ''; }
             if (aVal < bVal) return direction === 'asc' ? -1 : 1;
             if (aVal > bVal) return direction === 'asc' ? 1 : -1;
             return 0;
@@ -1024,7 +1046,7 @@ class SpotifyPlaylistHelper {
         if (this.currentSort.column === column) {
             this.currentSort.direction = this.currentSort.direction === 'asc' ? 'desc' : 'asc';
         } else {
-            this.currentSort = { column, direction: column === 'playlists' || column === 'popularity' ? 'desc' : 'asc' };
+            this.currentSort = { column, direction: column === 'playlists' || column === 'popularity' || column === 'added' ? 'desc' : 'asc' };
         }
         if (this.currentResults) {
             if (this.filtersEnabled) {
@@ -1033,6 +1055,12 @@ class SpotifyPlaylistHelper {
                 this.displayResults(this.currentResults.tracks, this.currentResults.totalLikedSongs, this.currentResults.totalPlaylistTracks);
             }
         }
+    }
+
+    formatAddedDate(addedAt) {
+        if (!addedAt) return '—';
+        const d = new Date(addedAt);
+        return d.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     }
 
     generateContinuousTable(tracks) {
@@ -1055,6 +1083,7 @@ class SpotifyPlaylistHelper {
                             <th>Genre</th>
                             <th class="sortable" onclick="window._app.sortTable('popularity')">Popularity ${sortIcon('popularity')}</th>
                             ${isAnalysis ? `<th class="sortable" onclick="window._app.sortTable('playlists')">Playlists ${sortIcon('playlists')}</th>` : ''}
+                            <th class="sortable" onclick="window._app.sortTable('added')">Added ${sortIcon('added')}</th>
                             <th>Open</th>
                         </tr>
                     </thead>
@@ -1069,6 +1098,7 @@ class SpotifyPlaylistHelper {
                     <td class="track-genre">${this.escapeHtml((track.genres || []).filter(g => g !== 'Unknown Genre').join(', ') || '—')}</td>
                     <td class="track-popularity">${Math.round(track.popularity || 0)}</td>
                     ${isAnalysis ? `<td class="track-playlist-count" title="${this.escapeHtml((track.playlistNames || []).join(', ') || 'Not in any playlist')}">${track.playlistCount > 0 ? track.playlistCount : '—'}</td>` : ''}
+                    <td class="track-added" title="${this.escapeHtml(track.addedAt || '')}">${this.formatAddedDate(track.addedAt)}</td>
                     <td class="track-link">
                         <a href="${track.url}" target="_blank" rel="noopener noreferrer" class="spotify-link">🎵</a>
                     </td>
@@ -1120,6 +1150,28 @@ class SpotifyPlaylistHelper {
             .sort(([,a], [,b]) => b - a)
             .slice(0, 10);
 
+        // Timeline: group by month, auto-switch to yearly if > 24 unique months
+        const monthCounts = {};
+        tracks.forEach(track => {
+            if (track.addedAt) {
+                const month = track.addedAt.slice(0, 7);
+                monthCounts[month] = (monthCounts[month] || 0) + 1;
+            }
+        });
+        const uniqueMonths = Object.keys(monthCounts).sort();
+        let likedByPeriod;
+        if (uniqueMonths.length <= 24) {
+            likedByPeriod = { labels: uniqueMonths, counts: uniqueMonths.map(m => monthCounts[m]) };
+        } else {
+            const yearCounts = {};
+            uniqueMonths.forEach(m => {
+                const year = m.slice(0, 4);
+                yearCounts[year] = (yearCounts[year] || 0) + monthCounts[m];
+            });
+            const years = Object.keys(yearCounts).sort();
+            likedByPeriod = { labels: years, counts: years.map(y => yearCounts[y]) };
+        }
+
         return {
             totalTracks: tracks.length,
             genreCounts,
@@ -1127,7 +1179,8 @@ class SpotifyPlaylistHelper {
             topGenres,
             topArtists,
             uniqueGenres: Object.keys(genreCounts).length,
-            uniqueArtists: Object.keys(artistCounts).length
+            uniqueArtists: Object.keys(artistCounts).length,
+            likedByPeriod
         };
     }
 
@@ -1138,9 +1191,11 @@ class SpotifyPlaylistHelper {
         // Destroy existing charts if they exist
         if (this.genreChart) this.genreChart.destroy();
         if (this.artistChart) this.artistChart.destroy();
+        if (this.timelineChart) this.timelineChart.destroy();
 
         this.createGenreChart(analytics);
         this.createArtistChart(analytics);
+        this.createTimelineChart(analytics);
     }
 
     createGenreChart(analytics) {
@@ -1253,6 +1308,37 @@ class SpotifyPlaylistHelper {
         });
     }
 
+
+    createTimelineChart(analytics) {
+        const { likedByPeriod } = analytics;
+        if (!likedByPeriod || likedByPeriod.labels.length === 0) return;
+        const ctx = document.getElementById('timelineChart').getContext('2d');
+        this.timelineChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: likedByPeriod.labels,
+                datasets: [{
+                    label: 'Songs Liked',
+                    data: likedByPeriod.counts,
+                    backgroundColor: '#1db954',
+                    borderColor: '#169c46',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { left: 10, right: 10, top: 10, bottom: 10 } },
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: { beginAtZero: true, ticks: { stepSize: 1 } },
+                    x: { ticks: { maxRotation: 45 } }
+                }
+            }
+        });
+    }
 
     generateCoverageBar(tracks, totalLikedSongs) {
         const playlistMap = this.currentResults?.playlistMap;
