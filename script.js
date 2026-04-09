@@ -6,7 +6,7 @@ class SpotifyPlaylistHelper {
         this.accessToken = null;
         this.currentResults = null;
         this.currentSort = { column: null, direction: 'asc' };
-        this.currentFilters = { genre: '', artistText: '' };
+        this.currentFilters = { genre: '', artistText: '', dedupeEnabled: true };
         this.filtersEnabled = false;
         this.init();
     }
@@ -303,6 +303,7 @@ class SpotifyPlaylistHelper {
 
         this.currentResults = {
             tracks: enrichedTracks,
+            playlistTracks: playlistTracks,
             totalLikedSongs: likedSongs.length,
             totalPlaylistTracks: playlistTracks.length
         };
@@ -771,18 +772,71 @@ class SpotifyPlaylistHelper {
 
 
     resetFilters() {
-        this.currentFilters = { genre: '', artistText: '' };
+        this.currentFilters = { genre: '', artistText: '', dedupeEnabled: true };
         this.filtersEnabled = false;
+    }
+
+    normalizeForDedup(title) {
+        return title
+            .toLowerCase()
+            .replace(/\s*[\(\[].*?[\)\]]/g, '')
+            .trim();
+    }
+
+    deduplicateTracks(tracks) {
+        const cr = this.currentResults;
+        const isNotInPlaylists = cr && !cr.isAnalysisMode && cr.playlistTracks;
+
+        // For "not in playlists" query: build a set of normalized keys from playlist tracks
+        // so we can cross-dedup (remove liked songs covered by a playlist version)
+        let playlistNormKeys = null;
+        if (isNotInPlaylists) {
+            playlistNormKeys = new Set(
+                cr.playlistTracks.map(t => {
+                    const key = this.normalizeForDedup(t.name) + '|' + t.artists.split(',')[0].trim().toLowerCase();
+                    return key;
+                })
+            );
+        }
+
+        // Group tracks by normalized key
+        const groups = new Map();
+        for (const track of tracks) {
+            const key = this.normalizeForDedup(track.name) + '|' + track.artists.split(',')[0].trim().toLowerCase();
+
+            // Cross-dedup: skip entirely if covered by a playlist version
+            if (playlistNormKeys && playlistNormKeys.has(key)) continue;
+
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key).push(track);
+        }
+
+        // Pick the best track from each group
+        const result = [];
+        for (const group of groups.values()) {
+            if (group.length === 1) {
+                result.push(group[0]);
+                continue;
+            }
+            // Prefer track in the most playlists, then highest popularity
+            group.sort((a, b) => {
+                const aPlaylists = a.playlistCount || 0;
+                const bPlaylists = b.playlistCount || 0;
+                if (bPlaylists !== aPlaylists) return bPlaylists - aPlaylists;
+                return (b.popularity || 0) - (a.popularity || 0);
+            });
+            result.push(group[0]);
+        }
+        return result;
     }
 
     applyFilters(tracks) {
         if (!this.filtersEnabled) return tracks;
-        const { genre, artistText } = this.currentFilters;
-        return tracks.filter(track => {
-            if (genre && !(track.genres || []).includes(genre)) return false;
-            if (artistText && !track.artists.toLowerCase().includes(artistText.toLowerCase())) return false;
-            return true;
-        });
+        const { genre, artistText, dedupeEnabled } = this.currentFilters;
+        let result = dedupeEnabled ? this.deduplicateTracks(tracks) : tracks;
+        if (genre) result = result.filter(t => (t.genres || []).includes(genre));
+        if (artistText) result = result.filter(t => t.artists.toLowerCase().includes(artistText.toLowerCase()));
+        return result;
     }
 
     handleFilterChange(type, value) {
@@ -790,8 +844,10 @@ class SpotifyPlaylistHelper {
             this.currentFilters.genre = value;
         } else if (type === 'artist') {
             this.currentFilters.artistText = value;
+        } else if (type === 'dedup') {
+            this.currentFilters.dedupeEnabled = !this.currentFilters.dedupeEnabled;
         } else if (type === 'clear') {
-            this.currentFilters = { genre: '', artistText: '' };
+            this.currentFilters = { genre: '', artistText: '', dedupeEnabled: this.currentFilters.dedupeEnabled };
             const genreEl = document.getElementById('genre-filter');
             const artistEl = document.getElementById('artist-filter');
             if (genreEl) genreEl.value = '';
@@ -806,8 +862,13 @@ class SpotifyPlaylistHelper {
         tableEl.innerHTML = this.generateContinuousTable(this.currentResults.tracks);
         const countEl = document.getElementById('filter-track-count');
         if (countEl) {
-            const n = this.applyFilters(this.currentResults.tracks).length;
-            countEl.textContent = `${n} of ${this.currentResults.tracks.length} tracks`;
+            const all = this.currentResults.tracks;
+            const filtered = this.applyFilters(all);
+            const dedupedOnly = this.currentFilters.dedupeEnabled ? this.deduplicateTracks(all) : all;
+            const hidden = all.length - dedupedOnly.length;
+            let label = `${filtered.length} of ${all.length} tracks`;
+            if (this.currentFilters.dedupeEnabled && hidden > 0) label += ` (${hidden} duplicate${hidden > 1 ? 's' : ''} hidden)`;
+            countEl.textContent = label;
         }
     }
 
@@ -825,7 +886,14 @@ class SpotifyPlaylistHelper {
             .map(a => `<option value="${this.escapeHtml(a)}">`)
             .join('');
 
-        const filteredCount = this.applyFilters(tracks).length;
+        const { dedupeEnabled } = this.currentFilters;
+        const filtered = this.applyFilters(tracks);
+        const dedupedOnly = dedupeEnabled ? this.deduplicateTracks(tracks) : tracks;
+        const hidden = tracks.length - dedupedOnly.length;
+        let countLabel = `${filtered.length} of ${tracks.length} tracks`;
+        if (dedupeEnabled && hidden > 0) countLabel += ` (${hidden} duplicate${hidden > 1 ? 's' : ''} hidden)`;
+
+        const dedupActive = dedupeEnabled ? ' active' : '';
 
         return `
             <div class="filter-controls">
@@ -844,7 +912,13 @@ class SpotifyPlaylistHelper {
                                oninput="window._app.handleFilterChange('artist', this.value)">
                         <datalist id="artist-datalist">${artistOptions}</datalist>
                     </div>
-                    <span id="filter-track-count" class="filter-count">${filteredCount} of ${tracks.length} tracks</span>
+                    <div class="filter-group">
+                        <label>Duplicates</label>
+                        <button class="filter-toggle-btn${dedupActive}" onclick="window._app.handleFilterChange('dedup', null)">
+                            ${dedupeEnabled ? 'Hidden' : 'Shown'}
+                        </button>
+                    </div>
+                    <span id="filter-track-count" class="filter-count">${countLabel}</span>
                     <button class="filter-clear" onclick="window._app.handleFilterChange('clear', null)">Clear</button>
                 </div>
             </div>

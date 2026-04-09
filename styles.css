@@ -738,6 +738,34 @@ button:disabled {
     box-shadow: none;
 }
 
+.filter-toggle-btn {
+    padding: 6px 14px;
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 16px;
+    font-size: 13px;
+    color: #191414;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease;
+    box-shadow: none;
+}
+
+.filter-toggle-btn.active {
+    background: rgba(29, 185, 84, 0.85);
+    border-color: rgba(29, 185, 84, 0.9);
+    color: #fff;
+}
+
+.filter-toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.75);
+    transform: none;
+    box-shadow: none;
+}
+
+.filter-toggle-btn.active:hover {
+    background: rgba(29, 185, 84, 1);
+}
+
 .sortable:hover {
     background: rgba(255, 255, 255, 0.18) !important;
 }
