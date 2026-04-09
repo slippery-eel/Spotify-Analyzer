@@ -1060,7 +1060,9 @@ class SpotifyPlaylistHelper {
                         <tr>
                             <th class="sortable" onclick="window._app.sortTable('name')">Track ${sortIcon('name')}</th>
                             <th class="sortable" onclick="window._app.sortTable('artists')">Artists ${sortIcon('artists')}</th>
-                            ${isAnalysis ? `<th class="sortable" onclick="window._app.sortTable('popularity')">Popularity ${sortIcon('popularity')}</th><th class="sortable" onclick="window._app.sortTable('playlists')">Playlists ${sortIcon('playlists')}</th>` : ''}
+                            <th>Genre</th>
+                            <th class="sortable" onclick="window._app.sortTable('popularity')">Popularity ${sortIcon('popularity')}</th>
+                            ${isAnalysis ? `<th class="sortable" onclick="window._app.sortTable('playlists')">Playlists ${sortIcon('playlists')}</th>` : ''}
                             <th>Open</th>
                         </tr>
                     </thead>
@@ -1072,9 +1074,9 @@ class SpotifyPlaylistHelper {
                 <tr class="track-row">
                     <td class="track-name">${this.escapeHtml(track.name)}</td>
                     <td class="track-artist">${this.escapeHtml(track.artists)}</td>
-                    ${isAnalysis ? `
+                    <td class="track-genre">${this.escapeHtml((track.genres || []).filter(g => g !== 'Unknown Genre').join(', ') || '—')}</td>
                     <td class="track-popularity">${Math.round(track.popularity || 0)}</td>
-                    <td class="track-playlist-count" title="${this.escapeHtml((track.playlistNames || []).join(', ') || 'Not in any playlist')}">${track.playlistCount > 0 ? track.playlistCount : '—'}</td>` : ''}
+                    ${isAnalysis ? `<td class="track-playlist-count" title="${this.escapeHtml((track.playlistNames || []).join(', ') || 'Not in any playlist')}">${track.playlistCount > 0 ? track.playlistCount : '—'}</td>` : ''}
                     <td class="track-link">
                         <a href="${track.url}" target="_blank" rel="noopener noreferrer" class="spotify-link">🎵</a>
                     </td>
