@@ -650,92 +650,65 @@ button:disabled {
 /* ── Filter Controls ──────────────────────────────────────── */
 .filter-controls {
     margin-bottom: 16px;
-    padding: 14px 16px;
-    background: rgba(255, 255, 255, 0.1);
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.12);
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 12px;
 }
 
 .filter-row {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: 16px;
     align-items: flex-end;
-    margin-bottom: 10px;
-}
-
-.filter-row:last-child {
-    margin-bottom: 0;
 }
 
 .filter-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
 }
 
 .filter-group label {
     font-size: 11px;
     font-weight: 600;
-    color: #555;
+    color: #444;
     text-transform: uppercase;
     letter-spacing: 0.05em;
 }
 
-.filter-genre-pills {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+.filter-select {
+    padding: 6px 10px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 8px;
+    font-size: 13px;
+    color: #191414;
+    cursor: pointer;
+    min-width: 160px;
+    transition: border-color 0.2s ease;
+}
+
+.filter-select:focus {
+    outline: none;
+    border-color: rgba(29, 185, 84, 0.6);
 }
 
 .filter-text-input {
-    padding: 6px 14px;
-    background: rgba(255, 255, 255, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 16px;
+    padding: 6px 12px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-radius: 8px;
     font-size: 13px;
     color: #191414;
     width: 180px;
-    transition: border-color 0.2s ease, background 0.2s ease;
+    transition: border-color 0.2s ease;
 }
 
 .filter-text-input:focus {
     outline: none;
     border-color: rgba(29, 185, 84, 0.6);
-    background: rgba(255, 255, 255, 0.9);
-}
-
-.filter-slider-wrap {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.filter-slider {
-    -webkit-appearance: none;
-    width: 120px;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(0, 0, 0, 0.2);
-    outline: none;
-    cursor: pointer;
-}
-
-.filter-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #1db954;
-    cursor: pointer;
-}
-
-.filter-slider-value {
-    font-size: 13px;
-    font-weight: 600;
-    color: #191414;
-    min-width: 28px;
 }
 
 .filter-count {

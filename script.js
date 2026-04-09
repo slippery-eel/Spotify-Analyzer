@@ -4,10 +4,9 @@ class SpotifyPlaylistHelper {
         this.clientSecret = null;
         this.redirectUri = null;
         this.accessToken = null;
-        this.currentGrouping = 'artist';
         this.currentResults = null;
         this.currentSort = { column: null, direction: 'asc' };
-        this.currentFilters = { genres: new Set(), artistText: '', minPopularity: 0 };
+        this.currentFilters = { genre: '', artistText: '' };
         this.filtersEnabled = false;
         this.init();
     }
@@ -21,16 +20,11 @@ class SpotifyPlaylistHelper {
     bindEvents() {
         const credentialsForm = document.getElementById('credentials-form');
         const runQueryBtns = document.querySelectorAll('.run-query-btn');
-        const groupingBtns = document.querySelectorAll('.grouping-btn');
 
         credentialsForm.addEventListener('submit', (e) => this.handleCredentialsSubmit(e));
 
         runQueryBtns.forEach(btn => {
             btn.addEventListener('click', (e) => this.handleQueryRun(e));
-        });
-
-        groupingBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => this.handleGroupingChange(e));
         });
     }
 
@@ -255,25 +249,6 @@ class SpotifyPlaylistHelper {
         document.getElementById('credentials-section').style.display = 'none';
     }
 
-    handleGroupingChange(e) {
-        const newGrouping = e.target.dataset.grouping;
-
-        // Update active button
-        document.querySelectorAll('.grouping-btn').forEach(btn => btn.classList.remove('active'));
-        e.target.classList.add('active');
-
-        this.currentGrouping = newGrouping;
-
-        // Re-display results with new grouping if we have results
-        if (this.currentResults) {
-            if (this.filtersEnabled) {
-                this.refreshTable();
-            } else {
-                this.displayResults(this.currentResults.tracks, this.currentResults.totalLikedSongs, this.currentResults.totalPlaylistTracks);
-            }
-        }
-    }
-
 
     async handleQueryRun(e) {
         const queryType = e.target.closest('.query-item').dataset.query;
@@ -488,11 +463,9 @@ class SpotifyPlaylistHelper {
     displayPlaylistsList(playlists) {
         const resultsContent = document.getElementById('results-content');
         const analyticsSection = document.getElementById('analytics-section');
-        const groupingControls = document.getElementById('grouping-controls');
 
-        // Hide analytics and grouping for playlist mode
+        // Hide analytics for playlist mode
         analyticsSection.style.display = 'none';
-        groupingControls.style.display = 'none';
 
         let html = `
             <div class="results-summary">
@@ -565,11 +538,9 @@ class SpotifyPlaylistHelper {
     displayPlaylistTracks(tracks, playlistName) {
         const resultsContent = document.getElementById('results-content');
         const analyticsSection = document.getElementById('analytics-section');
-        const groupingControls = document.getElementById('grouping-controls');
 
-        // Hide analytics and grouping for playlist view
+        // Hide analytics for playlist view
         analyticsSection.style.display = 'none';
-        groupingControls.style.display = 'none';
 
         let html = `
             <div class="results-summary">
@@ -894,7 +865,6 @@ class SpotifyPlaylistHelper {
     showResultsSection() {
         const resultsSection = document.getElementById('results-section');
         resultsSection.style.display = 'block';
-        document.getElementById('grouping-controls').style.display = 'block';
         requestAnimationFrame(() => resultsSection.scrollIntoView({ behavior: 'smooth' }));
     }
 
@@ -905,121 +875,83 @@ class SpotifyPlaylistHelper {
         document.getElementById('results-content').style.display = show ? 'none' : 'block';
     }
 
-    groupTracksByType(tracks, groupingType) {
-        switch (groupingType) {
-            case 'artist':
-                return tracks.reduce((groups, track) => {
-                    const artist = track.artists;
-                    if (!groups[artist]) {
-                        groups[artist] = [];
-                    }
-                    groups[artist].push(track);
-                    return groups;
-                }, {});
-
-            case 'genre':
-                return tracks.reduce((groups, track) => {
-                    const trackGenres = track.genres && track.genres.length > 0 ? track.genres : ['No Genre'];
-
-                    trackGenres.forEach(genre => {
-                        if (!groups[genre]) {
-                            groups[genre] = [];
-                        }
-                        // Avoid duplicates if track has multiple genres
-                        if (!groups[genre].some(t => t.id === track.id)) {
-                            groups[genre].push(track);
-                        }
-                    });
-
-                    return groups;
-                }, {});
-
-            case 'none':
-                return { 'All Tracks': tracks };
-
-            default:
-                return this.groupTracksByType(tracks, 'artist');
-        }
-    }
 
     resetFilters() {
-        this.currentFilters = { genres: new Set(), artistText: '', minPopularity: 0 };
+        this.currentFilters = { genre: '', artistText: '' };
         this.filtersEnabled = false;
     }
 
     applyFilters(tracks) {
         if (!this.filtersEnabled) return tracks;
-        const { genres, artistText, minPopularity } = this.currentFilters;
+        const { genre, artistText } = this.currentFilters;
         return tracks.filter(track => {
-            if (genres.size > 0 && !track.genres.some(g => genres.has(g))) return false;
+            if (genre && !(track.genres || []).includes(genre)) return false;
             if (artistText && !track.artists.toLowerCase().includes(artistText.toLowerCase())) return false;
-            if ((track.popularity || 0) < minPopularity) return false;
             return true;
         });
     }
 
     handleFilterChange(type, value) {
         if (type === 'genre') {
-            if (this.currentFilters.genres.has(value)) {
-                this.currentFilters.genres.delete(value);
-            } else {
-                this.currentFilters.genres.add(value);
-            }
+            this.currentFilters.genre = value;
         } else if (type === 'artist') {
             this.currentFilters.artistText = value;
-        } else if (type === 'popularity') {
-            this.currentFilters.minPopularity = Number(value);
         } else if (type === 'clear') {
-            this.currentFilters = { genres: new Set(), artistText: '', minPopularity: 0 };
+            this.currentFilters = { genre: '', artistText: '' };
+            const genreEl = document.getElementById('genre-filter');
+            const artistEl = document.getElementById('artist-filter');
+            if (genreEl) genreEl.value = '';
+            if (artistEl) artistEl.value = '';
         }
         this.refreshTable();
     }
 
     refreshTable() {
-        const wasFocusedArtist = document.activeElement?.classList.contains('filter-text-input');
-        const el = document.getElementById('filter-table-area');
-        if (!el) return;
-        const tracks = this.currentResults.tracks;
-        el.innerHTML = this.generateFilterBar(tracks) + this.generateContinuousTable(tracks);
-        if (wasFocusedArtist) el.querySelector('.filter-text-input')?.focus();
+        const tableEl = document.getElementById('track-table-only');
+        if (!tableEl) return;
+        tableEl.innerHTML = this.generateContinuousTable(this.currentResults.tracks);
+        const countEl = document.getElementById('filter-track-count');
+        if (countEl) {
+            const n = this.applyFilters(this.currentResults.tracks).length;
+            countEl.textContent = `${n} of ${this.currentResults.tracks.length} tracks`;
+        }
     }
 
     generateFilterBar(tracks) {
         const allGenres = [...new Set(tracks.flatMap(t => t.genres || []))]
             .filter(g => g && g !== 'Unknown Genre')
             .sort();
-        const { genres, artistText, minPopularity } = this.currentFilters;
-        const filteredCount = this.applyFilters(tracks).length;
+        const allArtists = [...new Set(tracks.flatMap(t => t.artists.split(', ').map(a => a.trim())))]
+            .sort();
 
-        const genrePills = allGenres.map(g => {
-            const active = genres.has(g) ? ' active' : '';
-            return `<button class="grouping-btn${active}" onclick="window._app.handleFilterChange('genre', ${JSON.stringify(g)})">${this.escapeHtml(g)}</button>`;
-        }).join('');
+        const genreOptions = allGenres
+            .map(g => `<option value="${this.escapeHtml(g)}">${this.escapeHtml(g)}</option>`)
+            .join('');
+        const artistOptions = allArtists
+            .map(a => `<option value="${this.escapeHtml(a)}">`)
+            .join('');
+
+        const filteredCount = this.applyFilters(tracks).length;
 
         return `
             <div class="filter-controls">
                 <div class="filter-row">
                     <div class="filter-group">
-                        <label>Genre</label>
-                        <div class="filter-genre-pills">${genrePills || '<span style="font-size:12px;color:#888">No genre data</span>'}</div>
+                        <label for="genre-filter">Genre</label>
+                        <select id="genre-filter" class="filter-select" onchange="window._app.handleFilterChange('genre', this.value)">
+                            <option value="">All Genres</option>
+                            ${genreOptions}
+                        </select>
                     </div>
-                </div>
-                <div class="filter-row">
                     <div class="filter-group">
-                        <label>Artist</label>
-                        <input class="filter-text-input" type="text" placeholder="Search artist…" value="${this.escapeHtml(artistText)}"
+                        <label for="artist-filter">Artist</label>
+                        <input id="artist-filter" class="filter-text-input" type="text"
+                               list="artist-datalist" placeholder="Search artist…"
                                oninput="window._app.handleFilterChange('artist', this.value)">
+                        <datalist id="artist-datalist">${artistOptions}</datalist>
                     </div>
-                    <div class="filter-group">
-                        <label>Min Popularity</label>
-                        <div class="filter-slider-wrap">
-                            <input class="filter-slider" type="range" min="0" max="100" value="${minPopularity}"
-                                   oninput="window._app.handleFilterChange('popularity', this.value)">
-                            <span class="filter-slider-value">${minPopularity}</span>
-                        </div>
-                    </div>
-                    <span class="filter-count">${filteredCount} of ${tracks.length} tracks</span>
-                    <button class="filter-clear" onclick="window._app.handleFilterChange('clear', null)">Clear filters</button>
+                    <span id="filter-track-count" class="filter-count">${filteredCount} of ${tracks.length} tracks</span>
+                    <button class="filter-clear" onclick="window._app.handleFilterChange('clear', null)">Clear</button>
                 </div>
             </div>
         `;
@@ -1066,8 +998,8 @@ class SpotifyPlaylistHelper {
         }
 
         if (tracks.length > 0 && !this.currentResults?.isArtistMode) {
-            html += `<div id="filter-table-area">`;
             if (this.filtersEnabled) html += this.generateFilterBar(this.currentResults.tracks);
+            html += `<div id="track-table-only">`;
             html += this.generateContinuousTable(tracks);
             html += `</div>`;
         } else if (this.currentResults?.isArtistMode) {
@@ -1114,8 +1046,6 @@ class SpotifyPlaylistHelper {
     generateContinuousTable(tracks) {
         const filtered = this.applyFilters(tracks);
         const sorted = this.sortedTracks(filtered);
-        const groupedTracks = this.groupTracksByType(sorted, this.currentGrouping);
-        const sortedGroups = Object.keys(groupedTracks).sort();
         const isAnalysis = this.currentResults?.isAnalysisMode;
 
         const sortIcon = (col) => {
@@ -1129,7 +1059,7 @@ class SpotifyPlaylistHelper {
                     <thead>
                         <tr>
                             <th class="sortable" onclick="window._app.sortTable('name')">Track ${sortIcon('name')}</th>
-                            <th class="sortable" onclick="window._app.sortTable('artists')">Artist${this.currentGrouping === 'genre' ? '' : 's'} ${sortIcon('artists')}</th>
+                            <th class="sortable" onclick="window._app.sortTable('artists')">Artists ${sortIcon('artists')}</th>
                             ${isAnalysis ? `<th class="sortable" onclick="window._app.sortTable('popularity')">Popularity ${sortIcon('popularity')}</th><th class="sortable" onclick="window._app.sortTable('playlists')">Playlists ${sortIcon('playlists')}</th>` : ''}
                             <th>Open</th>
                         </tr>
@@ -1137,46 +1067,22 @@ class SpotifyPlaylistHelper {
                     <tbody>
         `;
 
-        sortedGroups.forEach(groupName => {
-            const groupTracks = groupedTracks[groupName];
-
-            // Add group header row if grouping is enabled
-            if (this.currentGrouping !== 'none') {
-                html += `
-                    <tr class="group-row">
-                        <td colspan="${this.currentResults?.isAnalysisMode ? '5' : '3'}" class="group-cell">
-                            <span class="group-label">${this.escapeHtml(groupName)}</span>
-                            <span class="group-count">${groupTracks.length} song${groupTracks.length > 1 ? 's' : ''}</span>
-                        </td>
-                    </tr>
-                `;
-            }
-
-            // Add track rows
-            groupTracks.forEach(track => {
-                html += `
-                    <tr class="track-row">
-                        <td class="track-name">${this.escapeHtml(track.name)}</td>
-                        <td class="track-artist">${this.escapeHtml(track.artists)}</td>
-                        ${this.currentResults?.isAnalysisMode ? `
-                        <td class="track-popularity">${Math.round(track.popularity || 0)}</td>
-                        <td class="track-playlist-count" title="${this.escapeHtml((track.playlistNames || []).join(', ') || 'Not in any playlist')}">${track.playlistCount > 0 ? track.playlistCount : '—'}</td>` : ''}
-                        <td class="track-link">
-                            <a href="${track.url}" target="_blank" rel="noopener noreferrer" class="spotify-link">
-                                🎵
-                            </a>
-                        </td>
-                    </tr>
-                `;
-            });
+        sorted.forEach(track => {
+            html += `
+                <tr class="track-row">
+                    <td class="track-name">${this.escapeHtml(track.name)}</td>
+                    <td class="track-artist">${this.escapeHtml(track.artists)}</td>
+                    ${isAnalysis ? `
+                    <td class="track-popularity">${Math.round(track.popularity || 0)}</td>
+                    <td class="track-playlist-count" title="${this.escapeHtml((track.playlistNames || []).join(', ') || 'Not in any playlist')}">${track.playlistCount > 0 ? track.playlistCount : '—'}</td>` : ''}
+                    <td class="track-link">
+                        <a href="${track.url}" target="_blank" rel="noopener noreferrer" class="spotify-link">🎵</a>
+                    </td>
+                </tr>
+            `;
         });
 
-        html += `
-                    </tbody>
-                </table>
-            </div>
-        `;
-
+        html += `</tbody></table></div>`;
         return html;
     }
 
