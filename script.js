@@ -1126,7 +1126,7 @@ class SpotifyPlaylistHelper {
                 <table class="continuous-tracks-table">
                     <thead>
                         <tr>
-                            <th class="col-checkbox"><input type="checkbox" id="select-all-tracks" onchange="window._app.handleSelectAll(this.checked)" title="Select all visible"></th>
+                            <th class="col-checkbox"><input type="checkbox" class="track-select" id="select-all-tracks" onchange="window._app.handleSelectAll(this.checked)" title="Select all visible"></th>
                             <th class="sortable" onclick="window._app.sortTable('name')">Track ${sortIcon('name')}</th>
                             <th class="sortable" onclick="window._app.sortTable('artists')">Artists ${sortIcon('artists')}</th>
                             <th>Genre</th>

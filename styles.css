@@ -778,6 +778,7 @@ button:disabled {
     width: 36px;
     text-align: center;
     padding: 8px 6px !important;
+    vertical-align: middle;
 }
 
 /* Custom checkbox — hides native, shows styled pseudo-element */
