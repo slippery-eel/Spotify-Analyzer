@@ -215,10 +215,6 @@ class SpotifyPlaylistHelper {
         try {
             this.showAuthStatus('Exchanging code for access token...', 'success');
 
-            console.log('Exchanging code:', code);
-            console.log('Client ID:', this.clientId);
-            console.log('Redirect URI:', this.redirectUri);
-
             const response = await fetch('https://accounts.spotify.com/api/token', {
                 method: 'POST',
                 headers: {
@@ -232,8 +228,6 @@ class SpotifyPlaylistHelper {
                 })
             });
 
-            console.log('Response status:', response.status);
-
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
                 console.error('Token exchange error details:', errorData);
@@ -241,7 +235,6 @@ class SpotifyPlaylistHelper {
             }
 
             const data = await response.json();
-            console.log('Token exchange successful');
             this.accessToken = data.access_token;
 
             this.showAuthStatus('Successfully authenticated with Spotify!', 'success');
@@ -256,6 +249,22 @@ class SpotifyPlaylistHelper {
     showQueriesSection() {
         document.getElementById('queries-section').style.display = 'block';
         document.getElementById('credentials-section').style.display = 'none';
+    }
+
+    signOut() {
+        localStorage.removeItem('spotify-credentials');
+        localStorage.removeItem('spotify-key');
+        this.accessToken = null;
+        this.clientId = null;
+        this.clientSecret = null;
+        this.redirectUri = null;
+        document.getElementById('client-id').value = '';
+        document.getElementById('client-secret').value = '';
+        document.getElementById('redirect-uri').value = '';
+        document.getElementById('queries-section').style.display = 'none';
+        document.getElementById('results-section').style.display = 'none';
+        document.getElementById('credentials-section').style.display = 'block';
+        this.showAuthStatus('', '');
     }
 
 
@@ -741,7 +750,6 @@ class SpotifyPlaylistHelper {
             try {
                 const artistsData = await this.getArtistsDetails(batch);
                 for (const artist of artistsData) {
-                    console.log(`Artist: ${artist.name}, Genres:`, artist.genres, `Popularity: ${artist.popularity}, Followers: ${artist.followers.total}`); // Debug logging
                     artistGenreMap.set(artist.id, {
                         genres: artist.genres,
                         popularity: artist.popularity,

@@ -121,6 +121,35 @@ header p {
     transform: translateY(-1px);
 }
 
+.queries-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+.queries-header h2 {
+    margin-bottom: 0;
+}
+
+.sign-out-btn {
+    background: none;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    color: #555;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.sign-out-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.7);
+    transform: none;
+    box-shadow: none;
+}
+
 button {
     background: linear-gradient(135deg, #1db954, #1ed760);
     color: white;
