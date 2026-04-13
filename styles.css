@@ -78,6 +78,7 @@ header p {
 
 .input-reveal input {
     flex: 1;
+    width: auto !important;
     padding-right: 44px !important;
 }
 
