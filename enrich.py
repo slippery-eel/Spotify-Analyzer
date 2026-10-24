@@ -6,6 +6,7 @@ Lyrics: LRCLIB /api/get (exact match on title/artist/album/duration), falling ba
 
 Usage: python enrich.py            (tags + lyrics)
        python enrich.py tags|lyrics
+       python enrich.py retry-lyrics   (re-try tracks previously recorded as not found)
 """
 import json
 import re
@@ -114,49 +115,77 @@ def enrich_tags(conn):
 
 # ---------- LRCLIB ----------
 
+def _lrclib(kind, params):
+    """GET with retries on overload/rate-limit/network errors. Returns (status, json or None);
+    status None means LRCLIB never answered properly, so the miss must not be cached."""
+    for attempt in range(4):
+        try:
+            r = requests.get(f'{LRCLIB_URL}/{kind}', params=params, headers={'User-Agent': USER_AGENT}, timeout=20)
+        except requests.RequestException:
+            time.sleep(2 * (attempt + 1))
+            continue
+        if r.status_code in (429, 500, 502, 503, 504):
+            time.sleep(3 * (attempt + 1))
+            continue
+        return r.status_code, (r.json() if r.status_code == 200 else None)
+    return None, None
+
+
+def _pick(entry):
+    instrumental = str(entry.get('instrumental')).lower() == 'true'
+    if entry.get('plainLyrics') or instrumental:
+        return entry.get('plainLyrics'), instrumental, True
+    return None
+
+
 def fetch_lyrics(title, artist, album, duration_ms):
-    """Returns (plain_lyrics or None, instrumental bool, found bool)."""
-    headers = {'User-Agent': USER_AGENT}
+    """Returns (plain_lyrics or None, instrumental bool, found bool), or None if LRCLIB kept
+    failing (caller skips caching so the track is retried next run)."""
     params = {'track_name': title, 'artist_name': artist}
     attempts = [('get', {**params, 'album_name': album or '', 'duration': round((duration_ms or 0) / 1000)})]
     attempts.append(('search', params))
     if clean_title(title) != title:
         attempts.append(('search', {**params, 'track_name': clean_title(title)}))
+    errored = False
     for kind, p in attempts:
-        try:
-            r = requests.get(f'{LRCLIB_URL}/{kind}', params=p, headers=headers, timeout=20)
-        except requests.RequestException:
+        status, data = _lrclib(kind, p)
+        if status is None:
+            errored = True
             continue
-        if r.status_code != 200:
-            continue
-        data = r.json()
-        if kind == 'search':
-            data = data[0] if data else None
-        if not data:
-            continue
-        instrumental = str(data.get('instrumental')).lower() == 'true'
-        if data.get('plainLyrics') or instrumental:
-            return data.get('plainLyrics'), instrumental, True
-    return None, False, False
+        for entry in (data or []) if kind == 'search' else [data or {}]:
+            picked = _pick(entry)
+            if picked:
+                return picked
+    return None if errored else (None, False, False)
 
 
-def enrich_lyrics(conn):
-    rows = conn.execute('SELECT track_id, name, artists_json, album, duration_ms FROM tracks '
-                        'WHERE track_id NOT IN (SELECT track_id FROM lyrics)').fetchall()
+def enrich_lyrics(conn, retry_misses=False):
+    where = 'NOT IN (SELECT track_id FROM lyrics)'
+    if retry_misses:
+        where = 'NOT IN (SELECT track_id FROM lyrics WHERE found = 1)'
+    rows = conn.execute(f'SELECT track_id, name, artists_json, album, duration_ms FROM tracks '
+                        f'WHERE track_id {where}').fetchall()
     print(f'LRCLIB lyrics: {len(rows)} tracks to fetch')
 
     def work(row):
         track_id, name, aj, album, dur = row
         return track_id, fetch_lyrics(name, json.loads(aj)[0]['name'], album, dur)
 
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        for i, (track_id, (text, instrumental, found)) in enumerate(pool.map(work, rows), 1):
-            conn.execute('INSERT OR REPLACE INTO lyrics (track_id, plain_lyrics, instrumental, found, fetched_at) '
-                         'VALUES (?, ?, ?, ?, ?)', (track_id, text, int(instrumental), int(found), _now()))
+    errors = 0
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        for i, (track_id, result) in enumerate(pool.map(work, rows), 1):
+            if result is None:
+                errors += 1  # LRCLIB unavailable: leave uncached so the next run retries it
+            else:
+                text, instrumental, found = result
+                conn.execute('INSERT OR REPLACE INTO lyrics (track_id, plain_lyrics, instrumental, found, fetched_at) '
+                             'VALUES (?, ?, ?, ?, ?)', (track_id, text, int(instrumental), int(found), _now()))
             if i % 50 == 0:
                 conn.commit()
                 print(f'  lyrics {i}/{len(rows)}')
     conn.commit()
+    if errors:
+        print(f'  {errors} tracks skipped because LRCLIB kept failing; re-run to retry them')
 
 
 def report(conn):
@@ -188,8 +217,8 @@ def main():
     try:
         if 'tags' in which:
             enrich_tags(conn)
-        if 'lyrics' in which:
-            enrich_lyrics(conn)
+        if 'lyrics' in which or 'retry-lyrics' in which:
+            enrich_lyrics(conn, retry_misses='retry-lyrics' in which)
         report(conn)
     finally:
         conn.close()

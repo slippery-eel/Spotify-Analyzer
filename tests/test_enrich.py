@@ -27,3 +27,22 @@ def test_fetch_tags_falls_back_to_artist_and_caches(monkeypatch):
     assert enrich.fetch_tags('Song (Live)', 'A', cache) == ([('folk', 100)], 'artist')
     assert enrich.fetch_tags('Other', 'A', cache) == ([('folk', 100)], 'artist')
     assert calls.count('artist.gettoptags') == 1
+
+
+def test_fetch_lyrics_uses_later_search_results(monkeypatch):
+    def fake(kind, params):
+        if kind == 'get':
+            return 404, None
+        return 200, [{'plainLyrics': None, 'instrumental': False}, {'plainLyrics': 'la la', 'instrumental': False}]
+    monkeypatch.setattr(enrich, '_lrclib', fake)
+    assert enrich.fetch_lyrics('Song', 'A', 'Al', 1000) == ('la la', False, True)
+
+
+def test_fetch_lyrics_returns_none_when_server_keeps_failing(monkeypatch):
+    monkeypatch.setattr(enrich, '_lrclib', lambda kind, params: (None, None))
+    assert enrich.fetch_lyrics('Song', 'A', 'Al', 1000) is None
+
+
+def test_fetch_lyrics_real_miss_is_cached_as_not_found(monkeypatch):
+    monkeypatch.setattr(enrich, '_lrclib', lambda kind, params: (404, None) if kind == 'get' else (200, []))
+    assert enrich.fetch_lyrics('Song', 'A', 'Al', 1000) == (None, False, False)

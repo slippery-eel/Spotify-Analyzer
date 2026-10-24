@@ -7,3 +7,4 @@ token.json
 *.db
 __pycache__/
 .pytest_cache/
+*.db-journal
