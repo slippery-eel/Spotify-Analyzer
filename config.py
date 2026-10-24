@@ -19,7 +19,8 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 SPOTIFY_SCOPES = ('user-library-read playlist-read-private playlist-read-collaborative '
                   'playlist-modify-private playlist-modify-public')
 
-DB_FILE = os.path.join(_HERE, 'spotify_data.db')
+# SPOTIFY_DB overrides the DB path (e.g. a demo copy for UI testing)
+DB_FILE = os.getenv('SPOTIFY_DB') or os.path.join(_HERE, 'spotify_data.db')
 TOKEN_FILE = os.path.join(_HERE, 'token.json')
 
 VIBE_PLAYLISTS = [
