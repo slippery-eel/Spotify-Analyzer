@@ -11,7 +11,9 @@ at `http://127.0.0.1:8080`.
 **Sort liked songs** (the Pipeline page walks you through it)
 1. **Sync**: pulls your liked songs, all your playlists, and artist genres (read-only).
 2. **Fetch tags + lyrics**: Last.fm mood/style tags and LRCLIB lyrics for every song.
-3. **Vibe profiles**, 4. **Classify**: *coming next*. An AI classifier suggests which vibe playlists each liked song fits, with a score and a reason.
+3. **Vibe profiles**: a draft profile of each vibe playlist (distinctive tags, eras, artists, overlaps, typical songs)
+   that you edit and mark reviewed on the Profiles page.
+4. **Classify**: *coming next*. An AI classifier suggests which vibe playlists each liked song fits, with a score and a reason.
 5. **Review**: approve or decline each suggestion song by song, with a Spotify player, hotkeys and undo.
 6. **Add to Spotify**: *coming next*. Adds approved songs to their playlists. Add-only; nothing is removed from Liked Songs.
 

@@ -16,7 +16,7 @@ live in the same app.
 - [x] 0. todo.md, .gitignore, .env.example, requirements.txt
 - [x] 1. spotify_client.py + storage.py + sync.py; sync report
 - [x] 2. enrich.py (Last.fm tags + LRCLIB lyrics); coverage report
-- [ ] 3. profiles.py; draft vibe profile per playlist, I review ⏸
+- [x] 3. profiles.py + Profiles page: drafts built, I review/edit each one in the app ⏸
 - [ ] 4. classify.py pilot (~60 songs) + accuracy check + full-run cost estimate ⏸
 - [x] 5. Review UI
 - [ ] 6. push.py + push step (first real write triggered by me) ⏸

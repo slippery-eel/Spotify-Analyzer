@@ -16,6 +16,7 @@ import config
 import enrich
 import jobs
 import library
+import profiles
 import review
 import spotify_client as sp
 import storage
@@ -29,6 +30,7 @@ app.mount('/web', StaticFiles(directory=WEB), name='web')
 
 jobs.register('sync', 'Sync from Spotify', lambda progress: sync.run(progress)[0])
 jobs.register('enrich', 'Fetch tags + lyrics', lambda progress: enrich.run(progress))
+jobs.register('profiles', 'Draft vibe profiles', lambda progress: profiles.run(progress))
 jobs.register('retry_lyrics', 'Retry missing lyrics',
               lambda progress: enrich.run(progress, which=('lyrics',), retry_misses=True))
 
@@ -82,7 +84,7 @@ def _next_step(o):
     c = o['enrich']
     if c['tags_pending'] or c['lyrics_pending']:
         return 'enrich'
-    if not o['profiles']:
+    if not o['profiles'] or o['profiles_reviewed'] < o['sync']['vibe_matched']:
         return 'profiles'
     if not o['classified']:
         return 'classify'
@@ -110,9 +112,11 @@ def overview():
                      'vibe_total': len(config.VIBE_PLAYLISTS)},
             'enrich': enrich.coverage(conn),
             'profiles': q('SELECT COUNT(*) FROM playlist_profiles'),
+            'profiles_reviewed': q('SELECT COUNT(*) FROM playlist_profiles WHERE reviewed_at IS NOT NULL'),
+            'profiles_edited': q('SELECT COUNT(*) FROM playlist_profiles WHERE is_edited = 1'),
             'classified': stats['classified'],
             'review': stats['counts'],
-            'last_jobs': {t: jobs.last_success(t) for t in ('sync', 'enrich', 'retry_lyrics')},
+            'last_jobs': {t: jobs.last_success(t) for t in ('sync', 'enrich', 'retry_lyrics', 'profiles')},
             'job': jobs.current(),
         }
     finally:
@@ -194,6 +198,37 @@ def save_playlist(body: SavePlaylist):
         if '403' in msg:
             msg = 'Spotify refused the change (403). Log out and back in on the Account page to grant write access.'
         raise HTTPException(502, msg)
+    finally:
+        conn.close()
+
+
+# ---------- profiles ----------
+
+@app.get('/api/profiles')
+def get_profiles():
+    conn = _db()
+    try:
+        return {'profiles': profiles.list_profiles(conn)}
+    finally:
+        conn.close()
+
+
+class ProfileUpdate(BaseModel):
+    profile_text: Optional[str] = None
+    reviewed: Optional[bool] = None
+    reset: bool = False
+
+
+@app.post('/api/profiles/{vibe_key}')
+def update_profile(vibe_key: str, body: ProfileUpdate):
+    if vibe_key not in review.VIBES:
+        raise HTTPException(404, 'Unknown playlist')
+    conn = _db()
+    try:
+        profiles.update_profile(conn, vibe_key, body.profile_text, body.reviewed, body.reset)
+        return next(p for p in profiles.list_profiles(conn) if p['key'] == vibe_key)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     finally:
         conn.close()
 

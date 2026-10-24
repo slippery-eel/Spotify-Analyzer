@@ -64,7 +64,11 @@ CREATE TABLE IF NOT EXISTS lyrics (
 );
 CREATE TABLE IF NOT EXISTS playlist_profiles (
     vibe_key     TEXT PRIMARY KEY,
-    profile_text TEXT NOT NULL,
+    profile_text TEXT NOT NULL,           -- what the classifier uses (draft, or your edit)
+    draft_text   TEXT,                    -- latest auto draft, for "reset to draft"
+    stats_json   TEXT,                    -- tags/eras/artists/overlaps/examples behind the draft
+    is_edited    INTEGER NOT NULL DEFAULT 0,
+    reviewed_at  TEXT,
     updated_at   TEXT
 );
 CREATE TABLE IF NOT EXISTS classified (
@@ -106,8 +110,18 @@ def init_db():
     conn = get_connection()
     _migrate_playlists(conn)
     conn.executescript(SCHEMA)
+    _add_columns(conn, 'playlist_profiles', {'draft_text': 'TEXT', 'stats_json': 'TEXT',
+                                             'is_edited': 'INTEGER NOT NULL DEFAULT 0', 'reviewed_at': 'TEXT'})
     conn.commit()
     conn.close()
+
+
+def _add_columns(conn, table, columns):
+    """Add columns that CREATE TABLE IF NOT EXISTS can't add to an existing table."""
+    have = {r[1] for r in conn.execute(f'PRAGMA table_info({table})')}
+    for name, decl in columns.items():
+        if name not in have:
+            conn.execute(f'ALTER TABLE {table} ADD COLUMN {name} {decl}')
 
 
 def _migrate_playlists(conn):

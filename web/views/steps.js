@@ -26,10 +26,13 @@ export const STEPS = [
                  hint: (o) => `${o.enrich.lyrics_missing} songs had no lyrics found; LRCLIB is sometimes overloaded, so a retry can find more.` },
     },
     {
-        key: 'profiles', title: 'Vibe profiles', soon: true,
-        what: 'Drafts a profile for each vibe playlist from the songs already in it, for you to check and edit.',
-        status: (o) => o.profiles ? `${o.profiles} profiles` : 'Coming next',
-        done: (o) => o.profiles > 0,
+        key: 'profiles', title: 'Vibe profiles', job: 'profiles', href: '#/profiles',
+        runLabel: (o) => o.profiles ? 'Re-draft (keeps your edits)' : 'Draft profiles',
+        what: 'Drafts a profile of each vibe playlist from the songs already in it. You check and edit each one; the classifier reads them.',
+        status: (o) => o.profiles
+            ? `${o.profiles_reviewed}/${o.profiles} reviewed · ${o.profiles_edited} edited`
+            : 'Not drafted yet',
+        done: (o) => o.profiles > 0 && o.profiles_reviewed >= o.sync.vibe_matched,
     },
     {
         key: 'classify', title: 'Classify liked songs', soon: true,

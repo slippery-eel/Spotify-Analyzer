@@ -52,15 +52,18 @@ The original static analyzer (`index.html`/`script.js`/`styles.css`) was retired
 - **`sync.py`**: liked songs, every playlist (songs only for owned/collaborative ones; Spotify forbids others), artist genres.
   `snapshot_id` skip makes re-syncs fast. `run(progress)` for the app, `main()` for the CLI report.
 - **`enrich.py`**: Last.fm tags (track → cleaned title → artist fallback) and LRCLIB lyrics; misses cached, server errors not.
+- **`profiles.py`**: drafts a profile per vibe playlist from its songs: distinctive labels (from 2+ artists, ranked by
+  share above the library baseline; place tags skipped), common labels, eras, instrumental share, artists, overlaps, and
+  8 typical example songs (one per artist). `profile_text` is what the classifier reads; edits (`is_edited`) survive re-drafts.
 - **`jobs.py`**: one background job at a time (thread), history in `job_runs`. Progress is in-memory only: a job holds an
   open write transaction, so writing progress to the DB from the same thread would deadlock on SQLite's lock.
 - **`library.py`**: Library/Playlists queries, dedupe (`sync.normalize_for_dedup`, same key as the old app), analytics, Save as Playlist.
 - **`review.py`**: review queue + decisions. `added` rows are locked; manual approvals create rows that undo can remove.
 - **`server.py`**: `/login`, `/callback`, and the JSON API (`/api/overview`, `/api/jobs`, `/api/library`, `/api/playlists`,
-  `/api/save-playlist`, `/api/stats`, `/api/queue`, `/api/decide`, `/api/logout`).
+  `/api/save-playlist`, `/api/profiles[/vibe]`, `/api/stats`, `/api/queue`, `/api/decide`, `/api/logout`).
 
 ### Frontend (`web/`)
-- **`index.html`** + **`app.js`**: shell, hash router (`#/`, `#/pipeline[/step]`, `#/review[/vibe]`, `#/library[/not_in_playlists]`,
+- **`index.html`** + **`app.js`**: shell, hash router (`#/`, `#/pipeline[/step]`, `#/profiles[/vibe]`, `#/review[/vibe]`, `#/library[/not_in_playlists]`,
   `#/playlists[/id]`, `#/account`), nav badges, and the jobs dock (polls `/api/jobs` while a job runs).
 - **`views/*.js`**: one ES module per page exporting `mount(el, params)` and optional `unmount()` / `onJobDone()`.
   `steps.js` defines the pipeline steps shared by Home and Pipeline; `save.js` is the Save as Playlist modal.

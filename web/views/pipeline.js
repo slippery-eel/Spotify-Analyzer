@@ -41,10 +41,10 @@ async function render() {
                     ${keyNeeded ? '<p class="warn small">Add LASTFM_API_KEY to .env first.</p>' : ''}
                     <div class="step-actions">
                         ${s.job ? `<button class="btn ${s.key === o.next_step ? 'btn-primary' : ''}" data-job="${s.job}"
-                            ${busy || loginNeeded || keyNeeded ? 'disabled' : ''}>${running ? 'Running…' : s.done(o) ? 'Run again' : 'Run'}</button>` : ''}
+                            ${busy || loginNeeded || keyNeeded ? 'disabled' : ''}>${running ? 'Running…' : s.runLabel ? s.runLabel(o) : s.done(o) ? 'Run again' : 'Run'}</button>` : ''}
                         ${s.extra && s.extra.show(o) ? `<button class="btn" data-job="${s.extra.job}" ${busy || loginNeeded ? 'disabled' : ''}
                             title="${esc(s.extra.hint(o))}">${esc(s.extra.label)}</button>` : ''}
-                        ${s.href ? `<a class="btn ${s.key === o.next_step ? 'btn-primary' : ''}" href="${s.href}">Open</a>` : ''}
+                        ${s.href && !(s.key === 'profiles' && !o.profiles) ? `<a class="btn ${s.key === o.next_step ? 'btn-primary' : ''}" href="${s.href}">Open</a>` : ''}
                     </div>
                 </div>
             </li>`;

@@ -2,12 +2,13 @@
 import { $, $$, api, esc, toast } from './lib.js';
 import * as home from './views/home.js';
 import * as pipeline from './views/pipeline.js';
+import * as profiles from './views/profiles.js';
 import * as review from './views/review.js';
 import * as library from './views/library.js';
 import * as playlists from './views/playlists.js';
 import * as account from './views/account.js';
 
-const ROUTES = { '': home, pipeline, review, library, playlists, account };
+const ROUTES = { '': home, pipeline, profiles, review, library, playlists, account };
 let active = null;
 
 async function route() {

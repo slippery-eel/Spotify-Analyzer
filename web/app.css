@@ -215,6 +215,17 @@ table.tracks { width: 100%; border-collapse: collapse; }
 .pl-head { display: flex; gap: 18px; align-items: flex-start; margin-bottom: 18px; }
 .pl-head .cover { width: 120px; height: 120px; }
 
+/* ---------- profiles ---------- */
+.profile-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+.profile-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.profile-head h2 { margin: 0; font-size: 1.3rem; }
+.profile-text { width: 100%; margin-top: 6px; resize: vertical; line-height: 1.5; font-size: 14px; }
+.profile-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.profile-stats .card { margin-bottom: 0; }
+.examples { padding-left: 20px; display: flex; flex-direction: column; gap: 4px; margin: 6px 0 10px; }
+.examples a { color: var(--text); }
+.pl-item .ok, .pl-item .warn, .pl-item .muted { flex-shrink: 0; }
+
 /* ---------- review ---------- */
 .review-layout { display: grid; grid-template-columns: 220px 1fr; gap: 18px; }
 .review-layout > *, .song-card > * { min-width: 0; }
@@ -294,7 +305,8 @@ kbd { background: var(--surface-2); border: 1px solid var(--border); border-radi
     .pl-item { width: auto; white-space: nowrap; }
     .song-card { grid-template-columns: 1fr; }
     .hotkeys { display: none; }
-    .chart-grid { grid-template-columns: 1fr; }
+    .chart-grid, .profile-stats { grid-template-columns: 1fr; }
+    .step-actions .btn { white-space: normal; text-align: left; }
     .ignore-pop .pop { position: fixed; top: auto; left: 16px; right: 16px; width: auto; }
     .step-row { grid-template-columns: 28px 1fr; }
     .step-row .step-status { grid-column: 2; }
