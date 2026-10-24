@@ -1,2 +1,9 @@
 # Local Claude Code IDE settings
 .claude/
+
+# Python backend: secrets, local data, caches
+.env
+token.json
+*.db
+__pycache__/
+.pytest_cache/
