@@ -57,54 +57,90 @@ def _track_from_item(it):
     return t
 
 
-def sync_liked(conn):
+def _print_progress(msg, done=None, total=None):
+    print(f'  {msg}' + (f' ({done}/{total})' if total else ''))
+
+
+def sync_liked(conn, progress=_print_progress):
     rows = []
     for it in sp.paginate('/me/tracks', {'limit': 50}):
         t = _track_from_item(it)
         if t:
             storage.upsert_track(conn, t)
             rows.append((t['id'], it.get('added_at')))
+        if len(rows) % 500 == 0 and rows:
+            progress(f'Liked songs: {len(rows)} so far')
     conn.execute('DELETE FROM liked')  # full refresh so un-liked songs drop out
     conn.executemany('INSERT OR REPLACE INTO liked (track_id, added_at) VALUES (?, ?)', rows)
     conn.commit()
+    progress(f'{len(rows)} liked songs')
     return len(rows)
 
 
-def sync_playlists(conn):
-    user_playlists = list(sp.paginate('/me/playlists', {'limit': 50}))
+def _store_items(conn, playlist_id):
+    rows = []
+    for it in sp.paginate(f'/playlists/{playlist_id}/items', {'limit': 50}):
+        t = _track_from_item(it)
+        if t:
+            storage.upsert_track(conn, t)
+            rows.append((playlist_id, t['id'], it.get('added_at')))
+    conn.execute('DELETE FROM playlist_items WHERE playlist_id = ?', (playlist_id,))
+    conn.executemany('INSERT OR IGNORE INTO playlist_items (playlist_id, track_id, added_at) '
+                     'VALUES (?, ?, ?)', rows)
+    return len(rows)
+
+
+def sync_playlists(conn, progress=_print_progress, only_ids=None):
+    """Store every playlist you have; fetch songs for the ones you own or collaborate on.
+
+    Spotify only lets apps read the songs of playlists you own or collaborate on, so followed
+    playlists are listed without songs. only_ids limits the song re-fetch to those playlists.
+    """
+    me = sp.get('/me')
+    storage.set_meta(conn, 'user_id', me['id'])
+    storage.set_meta(conn, 'display_name', me.get('display_name') or me['id'])
+    user_playlists = [p for p in sp.paginate('/me/playlists', {'limit': 50}) if p]
     matched, unmatched = match_playlists(user_playlists)
+    vibe_by_id = {p['id']: k for k, p in matched.items()}
+    seen = set()
     changed = 0
-    for vibe_key, p in matched.items():
+    for i, p in enumerate(user_playlists, 1):
+        if p['id'] in seen:
+            continue
+        seen.add(p['id'])
+        owned = (p.get('owner') or {}).get('id') == me['id'] or bool(p.get('collaborative'))
+        paging = p.get('items') or p.get('tracks') or {}
         row = conn.execute('SELECT snapshot_id FROM playlists WHERE playlist_id = ?', (p['id'],)).fetchone()
         old_snapshot = row[0] if row else None
-        # A vibe re-pointed at a different playlist: drop the old one
-        for (old_id,) in conn.execute('SELECT playlist_id FROM playlists WHERE vibe_key = ? AND playlist_id != ?',
-                                      (vibe_key, p['id'])).fetchall():
-            conn.execute('DELETE FROM playlist_items WHERE playlist_id = ?', (old_id,))
-            conn.execute('DELETE FROM playlists WHERE playlist_id = ?', (old_id,))
+        vibe_key = vibe_by_id.get(p['id'])
+        if vibe_key:  # a vibe re-pointed at a different playlist: release the old row's key
+            conn.execute('UPDATE playlists SET vibe_key = NULL WHERE vibe_key = ? AND playlist_id != ?',
+                         (vibe_key, p['id']))
         # snapshot_id is only updated after the items are saved, so a crash mid-fetch re-fetches next run
-        conn.execute('INSERT OR REPLACE INTO playlists (playlist_id, vibe_key, name, snapshot_id, synced_at) '
-                     'VALUES (?, ?, ?, ?, ?)', (p['id'], vibe_key, p['name'], old_snapshot, _now()))
+        conn.execute('INSERT OR REPLACE INTO playlists (playlist_id, vibe_key, name, owner_id, is_owned, track_total, '
+                     'image_url, snapshot_id, synced_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+                     (p['id'], vibe_key, p['name'], (p.get('owner') or {}).get('id'), int(owned),
+                      paging.get('total'), ((p.get('images') or [{}])[0] or {}).get('url'), old_snapshot, _now()))
+        conn.commit()
+        if not owned or (only_ids is not None and p['id'] not in only_ids):
+            continue
         if old_snapshot and old_snapshot == p.get('snapshot_id'):
             continue
-        changed += 1
-        rows = []
-        for it in sp.paginate(f"/playlists/{p['id']}/items", {'limit': 50}):
-            t = _track_from_item(it)
-            if t:
-                storage.upsert_track(conn, t)
-                rows.append((p['id'], t['id'], it.get('added_at')))
-        conn.execute('DELETE FROM playlist_items WHERE playlist_id = ?', (p['id'],))
-        conn.executemany('INSERT OR IGNORE INTO playlist_items (playlist_id, track_id, added_at) '
-                         'VALUES (?, ?, ?)', rows)
+        n = _store_items(conn, p['id'])
         conn.execute('UPDATE playlists SET snapshot_id = ? WHERE playlist_id = ?', (p.get('snapshot_id'), p['id']))
         conn.commit()
-        print(f"  {p['name']}: {len(rows)} songs")
+        changed += 1
+        progress(f"Playlist {p['name']}: {n} songs", i, len(user_playlists))
+    # Playlists you deleted or unfollowed
+    gone = [r[0] for r in conn.execute('SELECT playlist_id FROM playlists') if r[0] not in seen]
+    for pid in gone:
+        conn.execute('DELETE FROM playlist_items WHERE playlist_id = ?', (pid,))
+        conn.execute('DELETE FROM playlists WHERE playlist_id = ?', (pid,))
     conn.commit()
     return matched, unmatched, user_playlists, changed
 
 
-def sync_artists(conn):
+def sync_artists(conn, progress=_print_progress):
     known = {r[0] for r in conn.execute('SELECT artist_id FROM artists')}
     needed = set()
     for (aj,) in conn.execute('SELECT artists_json FROM tracks'):
@@ -116,9 +152,31 @@ def sync_artists(conn):
                      (artist_id, a.get('name'), json.dumps(a.get('genres') or []), _now()))
         if i % 50 == 0:
             conn.commit()
-            print(f'  artists {i}/{len(todo)}')
+            progress('Artist genres', i, len(todo))
     conn.commit()
     return len(todo)
+
+
+def run(progress=_print_progress):
+    """Full sync. Returns (summary string, report args)."""
+    storage.init_db()
+    conn = storage.get_connection()
+    try:
+        progress('Syncing liked songs')
+        n = sync_liked(conn, progress)
+        progress('Syncing playlists')
+        matched, unmatched, user_playlists, changed = sync_playlists(conn, progress)
+        progress('Fetching artist genres')
+        new_artists = sync_artists(conn, progress)
+        storage.set_meta(conn, 'last_sync_at', _now())
+        conn.commit()
+        summary = (f'{n} liked songs, {len(user_playlists)} playlists ({changed} re-fetched), '
+                   f'{len(matched)}/{len(config.VIBE_PLAYLISTS)} vibe playlists matched, {new_artists} new artists')
+        if unmatched:
+            summary += f"; not found: {', '.join(v['name'] for v in unmatched)}"
+        return summary, (matched, unmatched, user_playlists)
+    finally:
+        conn.close()
 
 
 def report(conn, matched, unmatched, user_playlists):
@@ -146,17 +204,10 @@ def report(conn, matched, unmatched, user_playlists):
 
 def main():
     sys.stdout.reconfigure(encoding='utf-8')  # Windows console defaults to cp1252; playlist names have emoji
-    storage.init_db()
+    summary, (matched, unmatched, user_playlists) = run()
+    print(summary)
     conn = storage.get_connection()
     try:
-        print('Syncing liked songs...')
-        n = sync_liked(conn)
-        print(f'  {n} liked songs')
-        print('Syncing vibe playlists...')
-        matched, unmatched, user_playlists, changed = sync_playlists(conn)
-        print(f'  {changed} playlists re-fetched')
-        print('Fetching artist genres...')
-        print(f'  {sync_artists(conn)} new artists')
         report(conn, matched, unmatched, user_playlists)
     finally:
         conn.close()

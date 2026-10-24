@@ -34,8 +34,12 @@ CREATE TABLE IF NOT EXISTS liked (
 );
 CREATE TABLE IF NOT EXISTS playlists (
     playlist_id TEXT PRIMARY KEY,
-    vibe_key    TEXT UNIQUE NOT NULL,
+    vibe_key    TEXT UNIQUE,                 -- NULL for non-vibe playlists
     name        TEXT NOT NULL,
+    owner_id    TEXT,
+    is_owned    INTEGER NOT NULL DEFAULT 1,  -- owned or collaborative: tracks are readable
+    track_total INTEGER,
+    image_url   TEXT,
     snapshot_id TEXT,
     synced_at   TEXT
 );
@@ -68,6 +72,22 @@ CREATE TABLE IF NOT EXISTS classified (
     vibe_summary  TEXT,
     classified_at TEXT
 );
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,                   -- user_id, display_name, last_sync_at, ...
+    value TEXT
+);
+CREATE TABLE IF NOT EXISTS job_runs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_type    TEXT NOT NULL,
+    started_at  TEXT NOT NULL,
+    finished_at TEXT,
+    status      TEXT NOT NULL DEFAULT 'running',  -- running|success|error|interrupted
+    done        INTEGER DEFAULT 0,
+    total       INTEGER,
+    message     TEXT,
+    summary     TEXT,
+    error       TEXT
+);
 CREATE TABLE IF NOT EXISTS suggestions (
     track_id      TEXT NOT NULL REFERENCES tracks(track_id),
     vibe_key      TEXT NOT NULL,
@@ -84,9 +104,40 @@ CREATE TABLE IF NOT EXISTS suggestions (
 
 def init_db():
     conn = get_connection()
+    _migrate_playlists(conn)
     conn.executescript(SCHEMA)
     conn.commit()
     conn.close()
+
+
+def _migrate_playlists(conn):
+    """Rebuild the original vibe-only playlists table (vibe_key NOT NULL, no owner columns)."""
+    cols = [r[1] for r in conn.execute('PRAGMA table_info(playlists)')]
+    if not cols or 'owner_id' in cols:
+        return
+    conn.execute('PRAGMA foreign_keys = OFF')
+    conn.executescript("""
+        BEGIN;
+        CREATE TABLE playlists_new (
+            playlist_id TEXT PRIMARY KEY, vibe_key TEXT UNIQUE, name TEXT NOT NULL, owner_id TEXT,
+            is_owned INTEGER NOT NULL DEFAULT 1, track_total INTEGER, image_url TEXT,
+            snapshot_id TEXT, synced_at TEXT);
+        INSERT INTO playlists_new (playlist_id, vibe_key, name, snapshot_id, synced_at)
+            SELECT playlist_id, vibe_key, name, snapshot_id, synced_at FROM playlists;
+        DROP TABLE playlists;
+        ALTER TABLE playlists_new RENAME TO playlists;
+        COMMIT;
+    """)
+    conn.execute('PRAGMA foreign_keys = ON')
+
+
+def get_meta(conn, key, default=None):
+    row = conn.execute('SELECT value FROM meta WHERE key = ?', (key,)).fetchone()
+    return row[0] if row else default
+
+
+def set_meta(conn, key, value):
+    conn.execute('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)', (key, value))
 
 
 def upsert_track(conn, t):

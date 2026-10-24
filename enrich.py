@@ -97,10 +97,14 @@ def fetch_tags(title, artist, artist_cache):
     return [], 'none'
 
 
-def enrich_tags(conn):
+def _print_progress(msg, done=None, total=None):
+    print(f'  {msg}' + (f' ({done}/{total})' if total else ''))
+
+
+def enrich_tags(conn, progress=_print_progress):
     rows = conn.execute('SELECT track_id, name, artists_json FROM tracks '
                         'WHERE track_id NOT IN (SELECT track_id FROM track_tags)').fetchall()
-    print(f'Last.fm tags: {len(rows)} tracks to fetch')
+    progress(f'Last.fm tags: {len(rows)} tracks to fetch')
     artist_cache = {}
     for i, (track_id, name, aj) in enumerate(rows, 1):
         artist = json.loads(aj)[0]['name']
@@ -109,7 +113,7 @@ def enrich_tags(conn):
                      (track_id, json.dumps(tags), source, _now()))
         if i % 50 == 0:
             conn.commit()
-            print(f'  tags {i}/{len(rows)}')
+            progress('Last.fm tags', i, len(rows))
     conn.commit()
 
 
@@ -159,13 +163,13 @@ def fetch_lyrics(title, artist, album, duration_ms):
     return None if errored else (None, False, False)
 
 
-def enrich_lyrics(conn, retry_misses=False):
+def enrich_lyrics(conn, retry_misses=False, progress=_print_progress):
     where = 'NOT IN (SELECT track_id FROM lyrics)'
     if retry_misses:
         where = 'NOT IN (SELECT track_id FROM lyrics WHERE found = 1)'
     rows = conn.execute(f'SELECT track_id, name, artists_json, album, duration_ms FROM tracks '
                         f'WHERE track_id {where}').fetchall()
-    print(f'LRCLIB lyrics: {len(rows)} tracks to fetch')
+    progress(f'LRCLIB lyrics: {len(rows)} tracks to fetch')
 
     def work(row):
         track_id, name, aj, album, dur = row
@@ -182,43 +186,75 @@ def enrich_lyrics(conn, retry_misses=False):
                              'VALUES (?, ?, ?, ?, ?)', (track_id, text, int(instrumental), int(found), _now()))
             if i % 50 == 0:
                 conn.commit()
-                print(f'  lyrics {i}/{len(rows)}')
+                progress('Lyrics', i, len(rows))
     conn.commit()
     if errors:
-        print(f'  {errors} tracks skipped because LRCLIB kept failing; re-run to retry them')
+        progress(f'{errors} tracks skipped because LRCLIB kept failing; re-run to retry them')
+    return errors
+
+
+def coverage(conn):
+    q = lambda sql: conn.execute(sql).fetchone()[0]
+    return {
+        'tracks': q('SELECT COUNT(*) FROM tracks'),
+        'tags_track': q("SELECT COUNT(*) FROM track_tags WHERE source = 'track'"),
+        'tags_artist': q("SELECT COUNT(*) FROM track_tags WHERE source = 'artist'"),
+        'tags_none': q("SELECT COUNT(*) FROM track_tags WHERE source = 'none'"),
+        'tags_pending': q('SELECT COUNT(*) FROM tracks WHERE track_id NOT IN (SELECT track_id FROM track_tags)'),
+        'lyrics_found': q('SELECT COUNT(*) FROM lyrics WHERE plain_lyrics IS NOT NULL'),
+        'instrumental': q('SELECT COUNT(*) FROM lyrics WHERE instrumental = 1'),
+        'lyrics_missing': q('SELECT COUNT(*) FROM lyrics WHERE found = 0'),
+        'lyrics_pending': q('SELECT COUNT(*) FROM tracks WHERE track_id NOT IN (SELECT track_id FROM lyrics)'),
+    }
 
 
 def report(conn):
-    q = lambda s: conn.execute(s).fetchone()[0]
-    total = q('SELECT COUNT(*) FROM tracks')
+    c = coverage(conn)
+    total = max(c['tracks'], 1)
     print('\n=== Enrichment report ===')
     for source in ('track', 'artist', 'none'):
-        n = q(f"SELECT COUNT(*) FROM track_tags WHERE source = '{source}'")
-        print(f'Tags from {source:>6}: {n:5} ({n * 100 // max(total, 1)}%)')
-    lyr = q('SELECT COUNT(*) FROM lyrics WHERE plain_lyrics IS NOT NULL')
-    inst = q('SELECT COUNT(*) FROM lyrics WHERE instrumental = 1')
-    miss = q('SELECT COUNT(*) FROM lyrics WHERE found = 0')
-    print(f'Lyrics found: {lyr} ({lyr * 100 // max(total, 1)}%), instrumental: {inst}, not found: {miss}')
-    no_signal = q("""SELECT COUNT(*) FROM tracks t
-        WHERE t.track_id IN (SELECT track_id FROM track_tags WHERE source = 'none')
-          AND NOT EXISTS (SELECT 1 FROM json_each(t.artists_json) j
-                          JOIN artists a ON a.artist_id = json_extract(j.value, '$.id')
-                          WHERE a.genres_json != '[]')""")
-    print(f'Tracks with no tags AND no Spotify genres: {no_signal}')
+        n = c[f'tags_{source}']
+        print(f'Tags from {source:>6}: {n:5} ({n * 100 // total}%)')
+    print(f"Lyrics found: {c['lyrics_found']} ({c['lyrics_found'] * 100 // total}%), "
+          f"instrumental: {c['instrumental']}, not found: {c['lyrics_missing']}")
+
+
+def run(progress=_print_progress, which=('tags', 'lyrics'), retry_misses=False):
+    """Returns a one-line summary."""
+    if not config.LASTFM_API_KEY and 'tags' in which:
+        raise RuntimeError('Set LASTFM_API_KEY in .env first.')
+    storage.init_db()
+    conn = storage.get_connection()
+    try:
+        errors = 0
+        if 'tags' in which:
+            enrich_tags(conn, progress)
+        if 'lyrics' in which:
+            errors = enrich_lyrics(conn, retry_misses, progress) or 0
+        c = coverage(conn)
+    finally:
+        conn.close()
+    total = max(c['tracks'], 1)
+    tagged = c['tags_track'] + c['tags_artist']
+    summary = (f"Tags for {tagged * 100 // total}% of songs, lyrics for {c['lyrics_found'] * 100 // total}% "
+               f"(+{c['instrumental']} instrumental)")
+    if errors:
+        summary += f'; {errors} lyric lookups failed, run again to retry'
+    return summary
 
 
 def main():
     sys.stdout.reconfigure(encoding='utf-8')
-    if not config.LASTFM_API_KEY:
-        sys.exit('Set LASTFM_API_KEY in .env first.')
-    which = sys.argv[1:] or ['tags', 'lyrics']
-    storage.init_db()
+    args = sys.argv[1:] or ['tags', 'lyrics']
+    which = ['tags'] if 'tags' in args else []
+    if 'lyrics' in args or 'retry-lyrics' in args:
+        which.append('lyrics')
+    try:
+        print(run(which=which, retry_misses='retry-lyrics' in args))
+    except RuntimeError as e:
+        sys.exit(str(e))
     conn = storage.get_connection()
     try:
-        if 'tags' in which:
-            enrich_tags(conn)
-        if 'lyrics' in which or 'retry-lyrics' in which:
-            enrich_lyrics(conn, retry_misses='retry-lyrics' in which)
         report(conn)
     finally:
         conn.close()

@@ -17,7 +17,7 @@ def conn(tmp_path, monkeypatch):
                   (tid, f'Song {tid}', json.dumps([{'id': 'a1', 'name': 'Artist'}]), 'Album', '2015-01-01', 1000,
                    f'spotify:track:{tid}'))
         c.execute('INSERT INTO liked VALUES (?, ?)', (tid, '2026-01-01'))
-    c.execute("INSERT INTO playlists VALUES ('p1', 'cozy', 'mega cozy playlist', 's', 'now')")
+    c.execute("INSERT INTO playlists (playlist_id, vibe_key, name, snapshot_id, synced_at) VALUES ('p1', 'cozy', 'mega cozy playlist', 's', 'now')")
     c.execute("INSERT INTO playlist_items VALUES ('p1', 't2', 'now')")
     c.execute("INSERT INTO suggestions (track_id, vibe_key, score, reason, status) VALUES "
               "('t1', 'summer', 90, 'sunny', 'pending'), ('t1', 'cozy', 70, 'calm', 'pending'), "
