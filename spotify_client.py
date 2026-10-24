@@ -129,6 +129,10 @@ def post(path, body):
     return request('POST', path, body=body)
 
 
+def delete(path, body):
+    return request('DELETE', path, body=body)
+
+
 def paginate(path, params=None):
     """Yield every item across all pages of a paging object, following `next`."""
     page = get(path, params)

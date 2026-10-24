@@ -75,4 +75,4 @@ def test_403_explains_relogin(conn, monkeypatch):
 def test_nothing_approved(conn, monkeypatch):
     conn.execute("UPDATE suggestions SET status = 'declined'")
     conn.commit()
-    assert push.run() == 'Nothing approved to add'
+    assert push.run() == 'Nothing to apply'

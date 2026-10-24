@@ -190,13 +190,13 @@ def response_schema():
                        'properties': {'songs': {'type': 'array', 'items': song}}}}
 
 
-def call_model(client, system_prompt, entries):
-    """Returns (parsed songs list, usage dict)."""
+def call_model(client, system_prompt, entries, instruction='Classify these songs:', schema=None):
+    """Returns (parsed songs list, usage dict). fitcheck.py passes its own instruction and schema."""
     r = client.chat.completions.create(
         model=MODEL, temperature=0.2,
         messages=[{'role': 'system', 'content': system_prompt},
-                  {'role': 'user', 'content': 'Classify these songs:\n' + json.dumps(entries, ensure_ascii=False)}],
-        response_format={'type': 'json_schema', 'json_schema': response_schema()})
+                  {'role': 'user', 'content': instruction + '\n' + json.dumps(entries, ensure_ascii=False)}],
+        response_format={'type': 'json_schema', 'json_schema': schema or response_schema()})
     u = r.usage
     cached = getattr(getattr(u, 'prompt_tokens_details', None), 'cached_tokens', 0) or 0
     usage = {'input': u.prompt_tokens - cached, 'cached': cached, 'output': u.completion_tokens}

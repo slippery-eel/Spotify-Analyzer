@@ -92,6 +92,20 @@ CREATE TABLE IF NOT EXISTS job_runs (
     summary     TEXT,
     error       TEXT
 );
+CREATE TABLE IF NOT EXISTS fit_checks (
+    track_id    TEXT NOT NULL REFERENCES tracks(track_id),
+    vibe_key    TEXT NOT NULL,
+    fit         INTEGER,                  -- 0-100: how well the song fits this playlist it's in
+    reason      TEXT,
+    better_json TEXT NOT NULL DEFAULT '[]',  -- vibe keys it would fit better
+    status      TEXT NOT NULL DEFAULT 'unreviewed',  -- unreviewed|keep|remove|removed
+    move_to     TEXT,                     -- vibe key when "move" was chosen
+    position    INTEGER,                  -- index in the playlist when removed, for "put back"
+    checked_at  TEXT,
+    decided_at  TEXT,
+    removed_at  TEXT,
+    PRIMARY KEY (track_id, vibe_key)
+);
 CREATE TABLE IF NOT EXISTS suggestions (
     track_id      TEXT NOT NULL REFERENCES tracks(track_id),
     vibe_key      TEXT NOT NULL,

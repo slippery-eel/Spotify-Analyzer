@@ -163,3 +163,124 @@ def apply_decisions(conn, items):
             changed.append({**item, 'previous': row[0]})
     conn.commit()
     return {'changed': changed, 'skipped': skipped}
+
+
+# ---------- playlist fit check ----------
+
+MOVED = 'Moved from '
+
+
+def _member_join():
+    return ('JOIN playlists p ON p.vibe_key = f.vibe_key '
+            'JOIN playlist_items pi ON pi.playlist_id = p.playlist_id AND pi.track_id = f.track_id')
+
+
+def fit_stats(conn, threshold=50):
+    per = {k: {'checked': 0, 'flagged': 0, 'remove': 0, 'removed': 0} for k in VIBES}
+    for vibe, checked, flagged in conn.execute(
+            f"SELECT f.vibe_key, COUNT(*), SUM(f.status = 'unreviewed' AND f.fit < ?) FROM fit_checks f {_member_join()} "
+            'GROUP BY f.vibe_key', (threshold,)):
+        if vibe in per:
+            per[vibe].update(checked=checked, flagged=flagged or 0)
+    for vibe, status, n in conn.execute(
+            "SELECT vibe_key, status, COUNT(*) FROM fit_checks WHERE status IN ('remove', 'removed') GROUP BY vibe_key, status"):
+        if vibe in per:
+            per[vibe][status] = n
+    sizes = dict(conn.execute('SELECT p.vibe_key, COUNT(pi.track_id) FROM playlists p '
+                              'LEFT JOIN playlist_items pi USING(playlist_id) WHERE p.vibe_key IS NOT NULL GROUP BY p.vibe_key'))
+    totals = {k: sum(v[k] for v in per.values()) for k in ('checked', 'flagged', 'remove', 'removed')}
+    totals['size'] = sum(sizes.values())
+    return {'totals': totals, 'playlists': [{'key': k, 'name': VIBES[k]['name'], 'size': sizes.get(k, 0), **per[k]}
+                                            for k in VIBES]}
+
+
+def get_fit_queue(conn, view='flagged', vibe=None, threshold=50, q=None, offset=0, limit=20):
+    """One card per (song, playlist) pair.
+    flagged: undecided pairs scoring under `threshold`, lowest first (current members only).
+    all:     every checked pair still in the playlist, lowest first.
+    decided: keep / remove (queued) / removed."""
+    params = []
+    if view == 'decided':
+        base = "FROM fit_checks f JOIN tracks t USING(track_id) WHERE f.status IN ('keep', 'remove', 'removed')"
+        order = 'f.decided_at DESC'
+    else:
+        base = f'FROM fit_checks f {_member_join()} JOIN tracks t ON t.track_id = f.track_id WHERE f.fit IS NOT NULL'
+        if view == 'flagged':
+            base += " AND f.status = 'unreviewed' AND f.fit < ?"
+            params.append(threshold)
+        order = 'f.fit, t.name'
+    if vibe:
+        base += ' AND f.vibe_key = ?'
+        params.append(vibe)
+    if q:
+        base += ' AND (t.name LIKE ? OR t.artists_json LIKE ?)'
+        params += [f'%{q}%'] * 2
+    total = conn.execute(f'SELECT COUNT(*) {base}', params).fetchone()[0]
+    rows = conn.execute(f'SELECT f.track_id, f.vibe_key, f.fit, f.reason, f.better_json, f.status, f.move_to {base} '
+                        f'ORDER BY {order} LIMIT ? OFFSET ?', params + [limit, offset]).fetchall()
+    cards = []
+    for tid, v, fit, reason, better, status, move_to in rows:
+        track = get_track(conn, tid)
+        current = set(track['in_playlists'])
+        track['check'] = {'vibe_key': v, 'fit': fit, 'reason': reason, 'status': status, 'move_to': move_to,
+                          'better': [b for b in json.loads(better) if b not in current and b in VIBES]}
+        cards.append(track)
+    return {'total': total, 'offset': offset, 'tracks': cards}
+
+
+def apply_fit_decisions(conn, items):
+    """items: [{'track_id', 'vibe_key', 'status': keep|remove|unreviewed, 'move_to'?}].
+    'removed' rows are owned by the apply step. Move = remove + an approved suggestion for the target.
+    Returns {'changed': [item + 'previous' + 'previous_move_to'], 'skipped': [...]}."""
+    changed, skipped = [], []
+    for item in items:
+        tid, vibe, new = item['track_id'], item['vibe_key'], item['status']
+        move_to = item.get('move_to') if new == 'remove' else None
+        row = conn.execute('SELECT status, move_to FROM fit_checks WHERE track_id = ? AND vibe_key = ?',
+                           (tid, vibe)).fetchone()
+        if not row:
+            skipped.append({**item, 'reason': 'not checked'})
+            continue
+        if row[0] == 'removed':
+            skipped.append({**item, 'reason': 'already removed; use Put back'})
+            continue
+        if new not in ('keep', 'remove', 'unreviewed') or (move_to and move_to not in VIBES):
+            skipped.append({**item, 'reason': 'bad decision'})
+            continue
+        if row[1] and row[1] != move_to:   # undo a previous move's queued add
+            conn.execute("DELETE FROM suggestions WHERE track_id = ? AND vibe_key = ? AND status = 'approved' "
+                         'AND reason LIKE ?', (tid, row[1], MOVED + '%'))
+        if move_to:
+            conn.execute(
+                'INSERT INTO suggestions (track_id, vibe_key, score, reason, status, decided_at) VALUES (?, ?, NULL, ?, ?, ?) '
+                "ON CONFLICT(track_id, vibe_key) DO UPDATE SET status = 'approved', decided_at = excluded.decided_at "
+                "WHERE suggestions.status IN ('pending', 'declined')",
+                (tid, move_to, MOVED + VIBES[vibe]['name'], 'approved', _now()))
+        conn.execute('UPDATE fit_checks SET status = ?, move_to = ?, decided_at = ? WHERE track_id = ? AND vibe_key = ?',
+                     (new, move_to, _now() if new != 'unreviewed' else None, tid, vibe))
+        changed.append({**item, 'previous': row[0], 'previous_move_to': row[1]})
+    conn.commit()
+    return {'changed': changed, 'skipped': skipped}
+
+
+def get_remove_queue(conn):
+    """Songs queued for removal, grouped by playlist."""
+    groups = {k: [] for k in VIBES}
+    for tid, vibe, fit, reason, move_to, name, aj in conn.execute(
+            "SELECT f.track_id, f.vibe_key, f.fit, f.reason, f.move_to, t.name, t.artists_json FROM fit_checks f "
+            "JOIN tracks t USING(track_id) WHERE f.status = 'remove' ORDER BY t.name COLLATE NOCASE"):
+        if vibe in groups:
+            groups[vibe].append({'track_id': tid, 'name': name, 'artists': [a['name'] for a in json.loads(aj)],
+                                 'fit': fit, 'reason': reason,
+                                 'move_to': VIBES[move_to]['name'] if move_to in VIBES else None})
+    ids = dict(conn.execute('SELECT vibe_key, playlist_id FROM playlists WHERE vibe_key IS NOT NULL'))
+    return [{'key': k, 'name': VIBES[k]['name'], 'playlist_id': ids.get(k), 'songs': songs}
+            for k, songs in groups.items() if songs]
+
+
+def recent_removed(conn, limit=30):
+    rows = conn.execute("SELECT f.track_id, f.vibe_key, f.removed_at, t.name, t.artists_json FROM fit_checks f "
+                        "JOIN tracks t USING(track_id) WHERE f.status = 'removed' ORDER BY f.removed_at DESC LIMIT ?",
+                        (limit,)).fetchall()
+    return [{'track_id': tid, 'vibe_key': v, 'playlist': VIBES[v]['name'] if v in VIBES else v, 'removed_at': at,
+             'name': name, 'artists': [a['name'] for a in json.loads(aj)]} for tid, v, at, name, aj in rows]
