@@ -10,7 +10,8 @@ from datetime import datetime, timezone
 import config
 
 EDITABLE = ('pending', 'approved', 'declined')
-VIEWS = ('pending', 'approved', 'declined', 'added')
+STATUSES = ('pending', 'approved', 'declined', 'added')
+VIEWS = ('todo', 'done')   # songs with undecided suggestions / songs with every suggestion decided
 MANUAL = 'Added manually'
 VIBES = {v['key']: v for v in config.VIBE_PLAYLISTS}
 
@@ -20,10 +21,16 @@ def _now():
 
 
 def get_stats(conn):
-    counts = {v: 0 for v in VIEWS}
-    for status, n in conn.execute('SELECT status, COUNT(DISTINCT track_id) FROM suggestions GROUP BY status'):
+    """counts: 'todo'/'done' are songs; 'pending'/'approved'/'declined'/'added' are suggestions
+    (so 'approved' = songs waiting to be added to a playlist)."""
+    counts = {k: 0 for k in VIEWS + STATUSES}
+    for status, n in conn.execute('SELECT status, COUNT(*) FROM suggestions GROUP BY status'):
         counts[status] = n
-    per_vibe = {k: {v: 0 for v in VIEWS} for k in VIBES}
+    counts['todo'] = conn.execute("SELECT COUNT(DISTINCT track_id) FROM suggestions WHERE status = 'pending'").fetchone()[0]
+    counts['done'] = conn.execute(
+        "SELECT COUNT(DISTINCT track_id) FROM suggestions s WHERE status != 'pending' AND NOT EXISTS "
+        "(SELECT 1 FROM suggestions p WHERE p.track_id = s.track_id AND p.status = 'pending')").fetchone()[0]
+    per_vibe = {k: {v: 0 for v in STATUSES} for k in VIBES}
     for vibe, status, n in conn.execute('SELECT vibe_key, status, COUNT(*) FROM suggestions GROUP BY vibe_key, status'):
         if vibe in per_vibe:
             per_vibe[vibe][status] = n
@@ -36,10 +43,17 @@ def get_stats(conn):
     return {'counts': counts, 'playlists': playlists, 'liked': liked, 'classified': classified}
 
 
-def get_queue(conn, view='pending', vibe=None, q=None, sort='score', offset=0, limit=20):
-    """Tracks with at least one suggestion in `view` status (for `vibe`, if given)."""
-    where = ['s.status = ?']
-    params = [view]
+def get_queue(conn, view='todo', vibe=None, q=None, sort='score', offset=0, limit=20):
+    """Songs to show on the Review page.
+
+    view='todo': songs with at least one undecided suggestion (for `vibe`, if given).
+    view='done': songs whose suggestions are all decided (one of them for `vibe`, if given).
+    """
+    pending = "EXISTS (SELECT 1 FROM suggestions p WHERE p.track_id = s.track_id AND p.status = 'pending')"
+    if view == 'todo':
+        where, params = ["s.status = 'pending'"], []
+    else:
+        where, params = ["s.status != 'pending'", f'NOT {pending}'], []
     if vibe:
         where.append('s.vibe_key = ?')
         params.append(vibe)
@@ -54,6 +68,28 @@ def get_queue(conn, view='pending', vibe=None, q=None, sort='score', offset=0, l
         f'SELECT s.track_id, MAX(s.score) AS max_score {base} GROUP BY s.track_id ORDER BY {order} '
         f'LIMIT ? OFFSET ?', params + [limit, offset])]
     return {'total': total, 'offset': offset, 'tracks': [get_track(conn, tid) for tid in ids]}
+
+
+def get_push_queue(conn):
+    """Approved, not-yet-added suggestions grouped by playlist (vibe config order)."""
+    groups = {k: [] for k in VIBES}
+    for tid, vibe, score, reason, name, aj in conn.execute(
+            "SELECT s.track_id, s.vibe_key, s.score, s.reason, t.name, t.artists_json FROM suggestions s "
+            "JOIN tracks t USING(track_id) WHERE s.status = 'approved' ORDER BY t.name COLLATE NOCASE"):
+        if vibe in groups:
+            groups[vibe].append({'track_id': tid, 'name': name, 'artists': [a['name'] for a in json.loads(aj)],
+                                 'score': score, 'reason': reason})
+    ids = dict(conn.execute('SELECT vibe_key, playlist_id FROM playlists WHERE vibe_key IS NOT NULL'))
+    return [{'key': k, 'name': VIBES[k]['name'], 'playlist_id': ids.get(k), 'songs': songs}
+            for k, songs in groups.items() if songs]
+
+
+def recent_added(conn, limit=30):
+    rows = conn.execute("SELECT s.track_id, s.vibe_key, s.added_at, t.name, t.artists_json FROM suggestions s "
+                        "JOIN tracks t USING(track_id) WHERE s.status = 'added' ORDER BY s.added_at DESC, t.name "
+                        'LIMIT ?', (limit,)).fetchall()
+    return [{'track_id': tid, 'vibe_key': v, 'playlist': VIBES[v]['name'] if v in VIBES else v, 'added_at': at,
+             'name': name, 'artists': [a['name'] for a in json.loads(aj)]} for tid, v, at, name, aj in rows]
 
 
 def get_track(conn, track_id):

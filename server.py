@@ -19,6 +19,7 @@ import enrich
 import jobs
 import library
 import profiles
+import push
 import review
 import spotify_client as sp
 import storage
@@ -35,6 +36,7 @@ jobs.register('enrich', 'Fetch tags + lyrics', lambda progress: enrich.run(progr
 jobs.register('profiles', 'Draft vibe profiles', lambda progress: profiles.run(progress))
 jobs.register('classify_pilot', 'Classifier test run', lambda progress: classify.run_pilot(progress))
 jobs.register('classify_all', 'Classify liked songs', lambda progress: classify.run_all(progress))
+jobs.register('push', 'Add approved songs to Spotify', lambda progress: push.run(progress))
 jobs.register('retry_lyrics', 'Retry missing lyrics',
               lambda progress: enrich.run(progress, which=('lyrics',), retry_misses=True))
 
@@ -153,7 +155,7 @@ def overview():
             'pilot': _pilot_summary(conn),
             'review': stats['counts'],
             'last_jobs': {t: jobs.last_success(t) for t in
-                          ('sync', 'enrich', 'retry_lyrics', 'profiles', 'classify_pilot', 'classify_all')},
+                          ('sync', 'enrich', 'retry_lyrics', 'profiles', 'classify_pilot', 'classify_all', 'push')},
             'job': jobs.current(),
         }
     finally:
@@ -270,6 +272,17 @@ def update_profile(vibe_key: str, body: ProfileUpdate):
         conn.close()
 
 
+# ---------- push ----------
+
+@app.get('/api/push')
+def get_push():
+    conn = _db()
+    try:
+        return {'groups': review.get_push_queue(conn), 'recent': review.recent_added(conn)}
+    finally:
+        conn.close()
+
+
 # ---------- review ----------
 
 @app.get('/api/stats')
@@ -284,7 +297,7 @@ def stats():
 
 
 @app.get('/api/queue')
-def queue(view: Literal['pending', 'approved', 'declined', 'added'] = 'pending',
+def queue(view: Literal['todo', 'done'] = 'todo',
           vibe: Optional[str] = None, q: Optional[str] = None,
           sort: Literal['score', 'added'] = 'score',
           offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)):

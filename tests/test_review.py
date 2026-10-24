@@ -27,20 +27,39 @@ def conn(tmp_path, monkeypatch):
     c.close()
 
 
-def test_queue_returns_pending_tracks_with_suggestions_sorted(conn):
-    data = review.get_queue(conn, 'pending')
+def test_queue_todo_returns_undecided_songs_sorted(conn):
+    data = review.get_queue(conn, 'todo')
     assert data['total'] == 1
     t = data['tracks'][0]
     assert t['track_id'] == 't1' and [s['vibe_key'] for s in t['suggestions']] == ['summer', 'cozy']
-    assert review.get_queue(conn, 'pending', vibe='gym')['total'] == 0
-    assert review.get_queue(conn, 'pending', q='nomatch')['total'] == 0
+    assert review.get_queue(conn, 'todo', vibe='gym')['total'] == 0
+    assert review.get_queue(conn, 'todo', q='nomatch')['total'] == 0
+
+
+def test_song_moves_to_done_only_when_every_suggestion_is_decided(conn):
+    review.apply_decisions(conn, [{'track_id': 't1', 'vibe_key': 'summer', 'status': 'approved'}])
+    assert [t['track_id'] for t in review.get_queue(conn, 'todo')['tracks']] == ['t1']   # cozy still undecided
+    assert [t['track_id'] for t in review.get_queue(conn, 'done')['tracks']] == ['t2']
+    review.apply_decisions(conn, [{'track_id': 't1', 'vibe_key': 'cozy', 'status': 'declined'}])
+    assert review.get_queue(conn, 'todo')['total'] == 0
+    assert sorted(t['track_id'] for t in review.get_queue(conn, 'done')['tracks']) == ['t1', 't2']
+    assert review.get_queue(conn, 'done', vibe='summer')['total'] == 1
+
+
+def test_push_queue_groups_approved_by_playlist(conn):
+    review.apply_decisions(conn, [{'track_id': 't1', 'vibe_key': 'summer', 'status': 'approved'},
+                                  {'track_id': 't1', 'vibe_key': 'cozy', 'status': 'approved'}])
+    q = review.get_push_queue(conn)
+    assert [(g['key'], g['playlist_id'], [s['track_id'] for s in g['songs']]) for g in q] == [
+        ('summer', None, ['t1']), ('cozy', 'p1', ['t1'])]
+    assert review.recent_added(conn)[0]['vibe_key'] == 'gym'
 
 
 def test_decide_approve_decline_and_undo(conn):
     res = review.apply_decisions(conn, [{'track_id': 't1', 'vibe_key': 'summer', 'status': 'approved'}])
     assert res['changed'][0]['previous'] == 'pending'
     review.apply_decisions(conn, [{'track_id': 't1', 'vibe_key': 'summer', 'status': 'pending'}])
-    assert review.get_queue(conn, 'approved')['total'] == 0
+    assert review.get_push_queue(conn) == []
 
 
 def test_added_rows_are_locked(conn):
@@ -63,6 +82,7 @@ def test_manual_approve_skips_playlist_song_is_already_in(conn):
 
 def test_stats_counts(conn):
     s = review.get_stats(conn)
-    assert s['counts']['pending'] == 1 and s['counts']['added'] == 1
+    assert s['counts']['todo'] == 1 and s['counts']['done'] == 1
+    assert s['counts']['pending'] == 2 and s['counts']['added'] == 1
     cozy = next(p for p in s['playlists'] if p['key'] == 'cozy')
     assert cozy['size'] == 1 and cozy['counts']['pending'] == 1

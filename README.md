@@ -15,8 +15,10 @@ at `http://127.0.0.1:8080`.
    that you edit and mark reviewed on the Profiles page.
 4. **Classify**: gpt-4o-mini suggests which vibe playlists each liked song fits, with a score and a reason.
    A test run on ~60 songs (20 already sorted by you) shows how often it agrees with you and what the full run costs.
-5. **Review**: approve or decline each suggestion song by song, with a Spotify player, hotkeys and undo.
-6. **Add to Spotify**: *coming next*. Adds approved songs to their playlists. Add-only; nothing is removed from Liked Songs.
+5. **Review**: go song by song (To review / Reviewed tabs). Approve or decline each suggested playlist, or use
+   "Approve the rest / Decline the rest" on a card. Spotify player, hotkeys and undo included.
+6. **Add to Spotify**: every approved song, grouped by playlist. Undo any approval, then one button adds them all.
+   Add-only: nothing is removed from any playlist or from Liked Songs; songs already there are skipped.
 
 **Explore**
 - **Library**: every liked song with genre/tag, artist and date filters, duplicate hiding, sortable columns,
@@ -65,6 +67,7 @@ python enrich.py                 # tags + lyrics
 python enrich.py retry-lyrics    # re-try songs that had no lyrics
 python profiles.py               # draft vibe profiles
 python classify.py pilot | all   # classifier test run / full run (uses OpenAI credit)
+python push.py                   # add approved songs to their Spotify playlists
 python -m pytest                 # tests (no network calls)
 ```
 

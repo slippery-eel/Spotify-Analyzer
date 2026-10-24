@@ -4,7 +4,7 @@ import { refreshBadges } from '../app.js';
 
 let root;
 const state = {
-    view: 'pending', vibe: '', q: '', sort: 'score',
+    view: 'todo', vibe: '', q: '', sort: 'score',
     tracks: [], total: 0, focus: 0,
     playlists: [], names: {},
     undo: [],   // stack of [{track_id, vibe_key, status: previous}] batches
@@ -26,9 +26,12 @@ export async function mount(el, [vibe]) {
             </aside>
             <div>
                 <div class="toolbar">
-                    <div class="tabs" id="tabs">
-                        ${['pending', 'approved', 'declined', 'added'].map(v =>
-                            `<button data-view="${v}" class="${v === state.view ? 'active' : ''}">${v[0].toUpperCase() + v.slice(1)} <span class="count"></span></button>`).join('')}
+                    <div class="toolbar-head">
+                        <div class="tabs" id="tabs">
+                            ${[['todo', 'To review'], ['done', 'Reviewed']].map(([v, label]) =>
+                                `<button data-view="${v}" class="${v === state.view ? 'active' : ''}">${label} <span class="count"></span></button>`).join('')}
+                        </div>
+                        <a class="btn" id="to-push" href="#/push">Add to Spotify <span class="count" id="push-count"></span></a>
                     </div>
                     <div class="toolbar-row">
                         <input id="search" type="search" placeholder="Search title, artist, album  ( / )" value="${esc(state.q)}">
@@ -36,8 +39,6 @@ export async function mount(el, [vibe]) {
                             <option value="score">Best fit first</option>
                             <option value="added">Recently liked first</option>
                         </select>
-                        <button class="btn" id="approve-page" title="Approve every pending suggestion shown">Approve all shown</button>
-                        <button class="btn" id="decline-page" title="Decline every pending suggestion shown">Decline all shown</button>
                     </div>
                     <p id="filter-desc" class="muted small"></p>
                 </div>
@@ -52,8 +53,7 @@ export async function mount(el, [vibe]) {
             <span><kbd>j</kbd>/<kbd>k</kbd> next/prev song</span>
             <span><kbd>1</kbd>–<kbd>9</kbd> approve suggestion</span>
             <span><kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>9</kbd> decline</span>
-            <span><kbd>a</kbd> approve rest</span>
-            <span><kbd>d</kbd> decline rest</span>
+            <span><kbd>a</kbd>/<kbd>d</kbd> approve/decline the rest of this song</span>
             <span><kbd>z</kbd> undo</span>
         </footer>`;
     $('#sort', root).value = state.sort;
@@ -75,10 +75,14 @@ async function loadStats() {
     state.names = Object.fromEntries(s.playlists.map(p => [p.key, p.name]));
     $('#summary', root).textContent = `${s.liked} liked songs · ${s.classified} classified so far`;
     $$('#tabs button', root).forEach(b => { b.querySelector('.count').textContent = s.counts[b.dataset.view] || 0; });
-    $('#all-count', root).textContent = s.counts[state.view] || 0;
+    // Sidebar: undecided suggestions while reviewing, approved-and-waiting on the Reviewed tab
+    const perVibe = state.view === 'todo' ? 'pending' : 'approved';
+    $('#all-count', root).textContent = s.counts[perVibe] || 0;
+    $('#push-count', root).textContent = s.counts.approved || '';
+    $('#to-push', root).classList.toggle('btn-primary', s.counts.approved > 0 && !s.counts.todo);
     $('#playlist-list', root).innerHTML = s.playlists.map(p => `
         <button class="pl-item ${state.vibe === p.key ? 'active' : ''}" data-vibe="${p.key}" title="${esc(p.description)}">
-            <span class="name">${esc(p.name)}</span><span class="count">${p.counts[state.view] || 0}</span>
+            <span class="name">${esc(p.name)}</span><span class="count">${p.counts[perVibe] || 0}</span>
         </button>`).join('');
     $('.pl-item[data-vibe=""]', root).classList.toggle('active', !state.vibe);
     const p = s.playlists.find(p => p.key === state.vibe);
@@ -106,7 +110,9 @@ function orderedSuggestions(t) {
 
 function cardHtml(t, i) {
     const sugs = orderedSuggestions(t);
-    const done = state.view === 'pending' && !sugs.some(s => s.status === 'pending');
+    const pendingN = sugs.filter(s => s.status === 'pending').length;
+    const approvedN = sugs.filter(s => s.status === 'approved').length;
+    const done = state.view === 'todo' && !pendingN;
     const suggested = new Set(t.suggestions.map(s => s.vibe_key).concat(t.in_playlists));
     const addable = state.playlists.filter(p => !suggested.has(p.key));
     return `
@@ -124,10 +130,16 @@ function cardHtml(t, i) {
             ${t.vibe_summary ? `<div class="summary">${esc(t.vibe_summary)}</div>` : ''}
             <div class="label">Suggested playlists</div>
             <div class="sugs">${sugs.map((s, j) => sugHtml(s, j)).join('')}</div>
-            ${addable.length && state.view !== 'added' ? `<div class="add-row">
+            ${addable.length ? `<div class="add-row">
                 <select data-add="${i}" aria-label="Add to another playlist"><option value="">+ Add to another playlist…</option>
                 ${addable.map(p => `<option value="${p.key}">${esc(p.name)}</option>`).join('')}</select>
             </div>` : ''}
+            <div class="card-foot">
+                ${pendingN ? `<button class="btn" data-rest="approved">Approve the rest (${pendingN})</button>
+                <button class="btn" data-rest="declined">Decline the rest</button>`
+                : '<span class="muted small">All decided</span>'}
+                ${approvedN ? `<a class="small" href="#/push">${approvedN} approved → Add to Spotify</a>` : ''}
+            </div>
         </div>
     </article>`;
 }
@@ -139,10 +151,11 @@ function sugHtml(s, j) {
         <span class="idx">${j < 9 ? j + 1 : ''}</span>
         <div>
             <span class="sug-name">${esc(state.names[s.vibe_key] || s.vibe_key)}</span>
+            ${s.status === 'approved' ? '<span class="pill pill-ok">will add</span>' : ''}
             ${s.score != null ? `<span class="score">${s.score}</span><span class="bar"><i style="width:${s.score}%"></i></span>` : ''}
             <div class="reason">${esc(s.reason || '')}</div>
         </div>
-        ${locked ? '<span class="status-tag">added ✓</span>' : `<div class="actions">
+        ${locked ? '<span class="status-tag">✓ In playlist</span>' : `<div class="actions">
             <button class="ok" data-act="approved" title="Approve" aria-label="Approve">✓</button>
             <button class="no" data-act="declined" title="Decline" aria-label="Decline">✗</button>
         </div>`}
@@ -154,9 +167,9 @@ function render() {
     $('#load-more', root).hidden = state.tracks.length >= state.total;
     const empty = $('#empty', root);
     empty.hidden = state.tracks.length > 0;
-    empty.innerHTML = state.view === 'pending'
-        ? 'Nothing to review here yet. Suggestions appear after the <a href="#/pipeline/classify">Classify</a> step runs.'
-        : `No ${state.view} suggestions here yet.`;
+    empty.innerHTML = state.view === 'todo'
+        ? 'Nothing left to review here. New suggestions appear after the <a href="#/pipeline/classify">Classify</a> step runs.'
+        : 'No reviewed songs here yet.';
 }
 
 function rerenderCard(i) {
@@ -244,6 +257,8 @@ function bind() {
         if (i !== state.focus) setFocus(i);
         const btn = e.target.closest('button[data-act]');
         if (btn) toggle(i, btn.closest('.sug').dataset.vibe, btn.dataset.act);
+        const rest = e.target.closest('button[data-rest]');
+        if (rest) decideRest([i], rest.dataset.rest);
     });
     $('#cards', root).addEventListener('change', (e) => {
         const sel = e.target.closest('select[data-add]');
@@ -273,8 +288,6 @@ function bind() {
     });
     $('#sort', root).addEventListener('change', (e) => { state.sort = e.target.value; loadQueue(); });
     $('#load-more', root).addEventListener('click', () => loadQueue(true));
-    $('#approve-page', root).addEventListener('click', () => decideRest(state.tracks.map((_, i) => i), 'approved'));
-    $('#decline-page', root).addEventListener('click', () => decideRest(state.tracks.map((_, i) => i), 'declined'));
 }
 
 function onKey(e) {

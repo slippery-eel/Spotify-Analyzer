@@ -47,7 +47,7 @@ export const STEPS = [
         },
         done: (o) => o.sync.liked > 0 && o.unclassified === 0,
         extra: {
-            job: 'classify_all', show: (o) => !!o.pilot && o.unclassified > 0, primary: (o) => !o.review.pending,
+            job: 'classify_all', show: (o) => !!o.pilot && o.unclassified > 0, primary: (o) => !o.review.todo,
             label: (o) => `Classify all ${o.unclassified} remaining (≈ $${estimate(o)})`,
             hint: 'Classifies every liked song not classified yet. Uses your OpenAI credit.',
             confirm: (o) => ({
@@ -62,13 +62,13 @@ export const STEPS = [
     {
         key: 'review', title: 'Review suggestions', href: '#/review',
         what: 'Approve or decline each suggestion song by song.',
-        status: (o) => `${o.review.pending} pending · ${o.review.approved} approved · ${o.review.declined} declined`,
-        done: (o) => o.classified > 0 && !o.review.pending,
+        status: (o) => `${o.review.todo} songs to review · ${o.review.done} reviewed`,
+        done: (o) => o.classified > 0 && !o.review.todo,
     },
     {
-        key: 'push', title: 'Add approved songs to Spotify', soon: true,
+        key: 'push', title: 'Add approved songs to Spotify', href: '#/push',
         what: 'Adds approved songs to their playlists. Add-only: nothing is removed from Liked Songs.',
-        status: (o) => `${o.review.approved} approved · ${o.review.added} added`,
+        status: (o) => `${o.review.approved} approved and waiting · ${o.review.added} added so far`,
         done: (o) => o.review.added > 0 && !o.review.approved,
     },
 ];
@@ -101,6 +101,6 @@ async function renderPilot(el, o) {
                     ${m.vibe ? `<div class="muted small">“${esc(m.vibe)}”</div>` : ''}</td>
                     <td>${m.actual.map(nm).join(', ')}</td><td>${m.picked.map(nm).join(', ') || '<span class="muted">nothing</span>'}</td></tr>`).join('')}
                 </tbody></table></details>` : ''}
-            <p class="step-actions"><a class="btn ${o.review.pending ? 'btn-primary' : ''}" href="#/review">Review suggestions for ${o.review.pending} songs</a></p>
+            <p class="step-actions"><a class="btn ${o.review.todo ? 'btn-primary' : ''}" href="#/review">Review suggestions (${o.review.todo} songs)</a></p>
         </div>`;
 }

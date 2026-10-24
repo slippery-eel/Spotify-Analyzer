@@ -38,7 +38,8 @@ async function render() {
             <a class="stat" href="#/library"><span class="stat-num">${o.sync.liked}</span><span class="stat-label">liked songs</span></a>
             <a class="stat" href="#/library/not_in_playlists"><span class="stat-num" id="home-unsorted">…</span><span class="stat-label">in no playlist</span></a>
             <a class="stat" href="#/playlists"><span class="stat-num">${o.sync.playlists}</span><span class="stat-label">playlists</span></a>
-            <a class="stat" href="#/review"><span class="stat-num">${o.review.pending}</span><span class="stat-label">suggestions to review</span></a>
+            <a class="stat" href="#/review"><span class="stat-num">${o.review.todo}</span><span class="stat-label">songs to review</span></a>
+            <a class="stat" href="#/push"><span class="stat-num">${o.review.approved}</span><span class="stat-label">approved, ready to add</span></a>
         </section>
 
         <section class="card">

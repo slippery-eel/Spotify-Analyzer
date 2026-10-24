@@ -20,7 +20,8 @@ live in the same app.
 - [x] 4. classify.py pilot (~60 songs) + accuracy check + full-run cost estimate ⏸
 - [ ] 4b. Full classification of remaining liked songs (I start it from Pipeline)
 - [x] 5. Review UI
-- [ ] 6. push.py + push step (first real write triggered by me) ⏸
+- [x] 6. push.py + Add to Spotify page; Review cleanup (To review/Reviewed tabs, per-card approve/decline the rest)
+- [ ] 6b. First real push, triggered by me
 - [ ] 7. Docs: review section below
 
 ## Merge into one app

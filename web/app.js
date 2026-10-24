@@ -4,11 +4,12 @@ import * as home from './views/home.js';
 import * as pipeline from './views/pipeline.js';
 import * as profiles from './views/profiles.js';
 import * as review from './views/review.js';
+import * as push from './views/push.js';
 import * as library from './views/library.js';
 import * as playlists from './views/playlists.js';
 import * as account from './views/account.js';
 
-const ROUTES = { '': home, pipeline, profiles, review, library, playlists, account };
+const ROUTES = { '': home, pipeline, profiles, review, push, library, playlists, account };
 let active = null;
 
 async function route() {
@@ -35,8 +36,11 @@ export async function refreshBadges() {
     try {
         const o = await api('/api/overview');
         const b = $('#badge-review');
-        b.hidden = !o.review.pending;
-        b.textContent = o.review.pending;
+        b.hidden = !o.review.todo;
+        b.textContent = o.review.todo;
+        const p = $('#badge-push');
+        p.hidden = !o.review.approved;
+        p.textContent = o.review.approved;
         $('#dot-account').hidden = o.account.logged_in;
         renderDock(o.job);
     } catch { /* server down: dock + badges just stay as they are */ }
