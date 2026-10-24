@@ -3,6 +3,7 @@
 Run: python server.py   then open http://127.0.0.1:8080
 (Port 8080 matches the redirect URI registered with Spotify.)
 """
+import json
 import os
 from typing import List, Literal, Optional
 
@@ -12,6 +13,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import classify
 import config
 import enrich
 import jobs
@@ -31,6 +33,8 @@ app.mount('/web', StaticFiles(directory=WEB), name='web')
 jobs.register('sync', 'Sync from Spotify', lambda progress: sync.run(progress)[0])
 jobs.register('enrich', 'Fetch tags + lyrics', lambda progress: enrich.run(progress))
 jobs.register('profiles', 'Draft vibe profiles', lambda progress: profiles.run(progress))
+jobs.register('classify_pilot', 'Classifier test run', lambda progress: classify.run_pilot(progress))
+jobs.register('classify_all', 'Classify liked songs', lambda progress: classify.run_all(progress))
 jobs.register('retry_lyrics', 'Retry missing lyrics',
               lambda progress: enrich.run(progress, which=('lyrics',), retry_misses=True))
 
@@ -86,13 +90,43 @@ def _next_step(o):
         return 'enrich'
     if not o['profiles'] or o['profiles_reviewed'] < o['sync']['vibe_matched']:
         return 'profiles'
-    if not o['classified']:
+    if not o['pilot']:
         return 'classify'
     if o['review']['pending']:
         return 'review'
+    if o['unclassified']:
+        return 'classify'
     if o['review']['approved']:
         return 'push'
     return None
+
+
+def _pilot_summary(conn):
+    raw = storage.get_meta(conn, 'pilot_report')
+    if not raw:
+        return None
+    r = json.loads(raw)
+    r['holdout'] = {k: v for k, v in r['holdout'].items() if k != 'misses'}
+    return r
+
+
+@app.get('/api/classify/pilot')
+def pilot_report():
+    """Full pilot report, with names for the holdout songs it missed."""
+    conn = _db()
+    try:
+        raw = storage.get_meta(conn, 'pilot_report')
+        if not raw:
+            return {'report': None}
+        r = json.loads(raw)
+        for m in r['holdout']['misses']:
+            name, aj = conn.execute('SELECT name, artists_json FROM tracks WHERE track_id = ?', (m['track_id'],)).fetchone()
+            m['name'], m['artist'] = name, json.loads(aj)[0]['name']
+            m['vibe'] = (conn.execute('SELECT vibe_summary FROM classified WHERE track_id = ?',
+                                      (m['track_id'],)).fetchone() or [None])[0]
+        return {'report': r, 'names': {v['key']: v['name'] for v in config.VIBE_PLAYLISTS}}
+    finally:
+        conn.close()
 
 
 @app.get('/api/overview')
@@ -115,8 +149,11 @@ def overview():
             'profiles_reviewed': q('SELECT COUNT(*) FROM playlist_profiles WHERE reviewed_at IS NOT NULL'),
             'profiles_edited': q('SELECT COUNT(*) FROM playlist_profiles WHERE is_edited = 1'),
             'classified': stats['classified'],
+            'unclassified': q('SELECT COUNT(*) FROM liked WHERE track_id NOT IN (SELECT track_id FROM classified)'),
+            'pilot': _pilot_summary(conn),
             'review': stats['counts'],
-            'last_jobs': {t: jobs.last_success(t) for t in ('sync', 'enrich', 'retry_lyrics', 'profiles')},
+            'last_jobs': {t: jobs.last_success(t) for t in
+                          ('sync', 'enrich', 'retry_lyrics', 'profiles', 'classify_pilot', 'classify_all')},
             'job': jobs.current(),
         }
     finally:

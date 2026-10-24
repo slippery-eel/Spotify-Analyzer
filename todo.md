@@ -9,7 +9,7 @@ live in the same app.
 - [x] Free Last.fm API key
 - [x] Add `http://127.0.0.1:8080/callback` as a redirect URI in the Spotify Developer Dashboard
 - [x] Spotify + Last.fm keys in `.env`
-- [ ] OpenAI key in `.env` (needed for classification)
+- [x] OpenAI key in `.env`
 - [x] Log in once
 
 ## Pipeline steps
@@ -17,7 +17,8 @@ live in the same app.
 - [x] 1. spotify_client.py + storage.py + sync.py; sync report
 - [x] 2. enrich.py (Last.fm tags + LRCLIB lyrics); coverage report
 - [x] 3. profiles.py + Profiles page: drafts built, I review/edit each one in the app ⏸
-- [ ] 4. classify.py pilot (~60 songs) + accuracy check + full-run cost estimate ⏸
+- [x] 4. classify.py pilot (~60 songs) + accuracy check + full-run cost estimate ⏸
+- [ ] 4b. Full classification of remaining liked songs (I start it from Pipeline)
 - [x] 5. Review UI
 - [ ] 6. push.py + push step (first real write triggered by me) ⏸
 - [ ] 7. Docs: review section below

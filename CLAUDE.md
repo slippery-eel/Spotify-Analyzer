@@ -55,12 +55,19 @@ The original static analyzer (`index.html`/`script.js`/`styles.css`) was retired
 - **`profiles.py`**: drafts a profile per vibe playlist from its songs: distinctive labels (from 2+ artists, ranked by
   share above the library baseline; place tags skipped), common labels, eras, instrumental share, artists, overlaps, and
   8 typical example songs (one per artist). `profile_text` is what the classifier reads; edits (`is_edited`) survive re-drafts.
+- **`classify.py`**: gpt-4o-mini, batches of 20, strict JSON schema (playlist enum). Prompt = system rules + every vibe's
+  size/breadth, description, hard rule, profile text, 8 typical + 8 range example songs (static, so OpenAI caches it);
+  per song: genres, tags, lyric excerpt or instrumental flag, and `artist_history` (where the owner put the artist's other
+  songs, excluding this song's versions). Scores >= 60 become pending suggestions; covered vibes (incl. other versions) are
+  skipped; re-classifying replaces only undecided rows. Pilot = 40 unsorted + 20 holdout songs (never prompt examples);
+  report (recall/precision/misses/cost estimate) lives in `meta.pilot_report`. Pilot recall went 30% -> 60% once base rates,
+  range examples and artist history were added.
 - **`jobs.py`**: one background job at a time (thread), history in `job_runs`. Progress is in-memory only: a job holds an
   open write transaction, so writing progress to the DB from the same thread would deadlock on SQLite's lock.
 - **`library.py`**: Library/Playlists queries, dedupe (`sync.normalize_for_dedup`, same key as the old app), analytics, Save as Playlist.
 - **`review.py`**: review queue + decisions. `added` rows are locked; manual approvals create rows that undo can remove.
 - **`server.py`**: `/login`, `/callback`, and the JSON API (`/api/overview`, `/api/jobs`, `/api/library`, `/api/playlists`,
-  `/api/save-playlist`, `/api/profiles[/vibe]`, `/api/stats`, `/api/queue`, `/api/decide`, `/api/logout`).
+  `/api/save-playlist`, `/api/profiles[/vibe]`, `/api/classify/pilot`, `/api/stats`, `/api/queue`, `/api/decide`, `/api/logout`).
 
 ### Frontend (`web/`)
 - **`index.html`** + **`app.js`**: shell, hash router (`#/`, `#/pipeline[/step]`, `#/profiles[/vibe]`, `#/review[/vibe]`, `#/library[/not_in_playlists]`,

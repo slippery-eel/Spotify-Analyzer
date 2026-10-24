@@ -13,7 +13,8 @@ at `http://127.0.0.1:8080`.
 2. **Fetch tags + lyrics**: Last.fm mood/style tags and LRCLIB lyrics for every song.
 3. **Vibe profiles**: a draft profile of each vibe playlist (distinctive tags, eras, artists, overlaps, typical songs)
    that you edit and mark reviewed on the Profiles page.
-4. **Classify**: *coming next*. An AI classifier suggests which vibe playlists each liked song fits, with a score and a reason.
+4. **Classify**: gpt-4o-mini suggests which vibe playlists each liked song fits, with a score and a reason.
+   A test run on ~60 songs (20 already sorted by you) shows how often it agrees with you and what the full run costs.
 5. **Review**: approve or decline each suggestion song by song, with a Spotify player, hotkeys and undo.
 6. **Add to Spotify**: *coming next*. Adds approved songs to their playlists. Add-only; nothing is removed from Liked Songs.
 
@@ -40,7 +41,7 @@ Copy `.env.example` to `.env` and fill it in:
 |---|---|
 | `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | Login and sync |
 | `LASTFM_API_KEY` | Mood/style tags ([get a free key](https://www.last.fm/api/account/create)) |
-| `OPENAI_API_KEY` | Classifying songs into vibes (coming next) |
+| `OPENAI_API_KEY` | Classifying songs into vibes |
 
 `.env` is gitignored, so your keys never leave your computer.
 
@@ -62,6 +63,8 @@ python spotify_client.py login   # log in without the app
 python sync.py                   # sync + a text report
 python enrich.py                 # tags + lyrics
 python enrich.py retry-lyrics    # re-try songs that had no lyrics
+python profiles.py               # draft vibe profiles
+python classify.py pilot | all   # classifier test run / full run (uses OpenAI credit)
 python -m pytest                 # tests (no network calls)
 ```
 
@@ -69,7 +72,7 @@ python -m pytest                 # tests (no network calls)
 
 ## Privacy
 - Everything stays on your computer: `spotify_data.db` (your synced library) and `token.json` (your Spotify login) are both gitignored.
-- The app only talks to Spotify, Last.fm, LRCLIB and (once classification exists) OpenAI.
+- The app only talks to Spotify, Last.fm, LRCLIB and OpenAI (song titles, artists, tags and short lyric excerpts are sent for classification).
 - **Sign out** on the Account page deletes the saved login token.
 
 ## Notes
