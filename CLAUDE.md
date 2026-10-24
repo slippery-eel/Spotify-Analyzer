@@ -78,6 +78,9 @@ The original static analyzer (`index.html`/`script.js`/`styles.css`) was retired
   `#/playlists[/id]`, `#/account`), nav badges, and the jobs dock (polls `/api/jobs` while a job runs).
 - **`views/*.js`**: one ES module per page exporting `mount(el, params)` and optional `unmount()` / `onJobDone()`.
   `steps.js` defines the pipeline steps shared by Home and Pipeline; `save.js` is the Save as Playlist modal.
+  `player.js` wraps Spotify's iFrame API for review cards (seek bar, ±15s, middle, one song at a time). Quirks: seeks
+  under ~1s and seeks after the end are ignored by the embed, seeking while paused needs a resume, and audio needs a real
+  click first. Card updates must never move the player node (moving an iframe reloads it).
 - **`app.css`**: tokens on `:root` with light/dark themes; Chart.js 4.4.1 from cdnjs for Library charts.
 
 ### Data notes

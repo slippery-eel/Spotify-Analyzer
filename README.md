@@ -16,7 +16,8 @@ at `http://127.0.0.1:8080`.
 4. **Classify**: gpt-4o-mini suggests which vibe playlists each liked song fits, with a score and a reason.
    A test run on ~60 songs (20 already sorted by you) shows how often it agrees with you and what the full run costs.
 5. **Review**: go song by song (To review / Reviewed tabs). Approve or decline each suggested playlist, or use
-   "Approve the rest / Decline the rest" on a card. Spotify player, hotkeys and undo included.
+   "Approve the rest / Decline the rest" on a card. Each card has a Spotify player with a seek bar, ±15s and
+   jump-to-middle (Space, ←/→, m); full songs if you're logged in to Spotify in that browser, else 30s previews.
 6. **Add to Spotify**: every approved song, grouped by playlist. Undo any approval, then one button adds them all.
    Add-only: nothing is removed from any playlist or from Liked Songs; songs already there are skipped.
 

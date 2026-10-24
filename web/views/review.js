@@ -1,6 +1,7 @@
 // Review queue: one card per song, approve/decline each suggested playlist.
 import { $, $$, api, esc, toast } from '../lib.js';
 import { refreshBadges } from '../app.js';
+import { bindPlayerClicks, control, destroyPlayers, mountPlayers, playerHtml } from './player.js';
 
 let root;
 const state = {
@@ -54,6 +55,7 @@ export async function mount(el, [vibe]) {
             <span><kbd>1</kbd>–<kbd>9</kbd> approve suggestion</span>
             <span><kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>9</kbd> decline</span>
             <span><kbd>a</kbd>/<kbd>d</kbd> approve/decline the rest of this song</span>
+            <span><kbd>Space</kbd> play/pause · <kbd>←</kbd>/<kbd>→</kbd> ∓15s · <kbd>m</kbd> middle</span>
             <span><kbd>z</kbd> undo</span>
         </footer>`;
     $('#sort', root).value = state.sort;
@@ -65,6 +67,7 @@ export async function mount(el, [vibe]) {
 
 export function unmount() {
     document.removeEventListener('keydown', onKey);
+    destroyPlayers();
 }
 
 // ---------- stats + playlist list ----------
@@ -96,10 +99,17 @@ async function loadQueue(append = false) {
     if (state.vibe) params.set('vibe', state.vibe);
     if (state.q) params.set('q', state.q);
     const data = await api(`/api/queue?${params}`);
+    const start = state.tracks.length;
     state.tracks = append ? state.tracks.concat(data.tracks) : data.tracks;
     state.total = data.total;
-    if (!append) state.focus = 0;
-    render();
+    if (!append) {
+        state.focus = 0;
+        return render();
+    }
+    // Append only the new cards so players already on the page keep playing
+    $('#cards', root).insertAdjacentHTML('beforeend', data.tracks.map((t, j) => cardHtml(t, start + j)).join(''));
+    mountPlayers($('#cards', root));
+    $('#load-more', root).hidden = state.tracks.length >= state.total;
 }
 
 function orderedSuggestions(t) {
@@ -118,7 +128,7 @@ function cardHtml(t, i) {
     return `
     <article class="song-card ${i === state.focus ? 'focused' : ''} ${done ? 'done' : ''}" data-i="${i}">
         <div>
-            <iframe loading="lazy" src="https://open.spotify.com/embed/track/${t.track_id}?theme=0" allow="encrypted-media" title="Play ${esc(t.name)}"></iframe>
+            ${playerHtml(t.track_id, t.name)}
             <div class="label">Genres / tags</div>
             <div class="chips">${t.genres.concat(t.tags).slice(0, 12).map(g => `<span class="chip">${esc(g)}</span>`).join('') || '<span class="muted">none found</span>'}</div>
             ${t.in_playlists.length ? `<div class="label">Already in</div>
@@ -163,7 +173,9 @@ function sugHtml(s, j) {
 }
 
 function render() {
+    destroyPlayers();
     $('#cards', root).innerHTML = state.tracks.map(cardHtml).join('');
+    mountPlayers($('#cards', root));
     $('#load-more', root).hidden = state.tracks.length >= state.total;
     const empty = $('#empty', root);
     empty.hidden = state.tracks.length > 0;
@@ -175,13 +187,15 @@ function render() {
 function rerenderCard(i) {
     const el = $(`.song-card[data-i="${i}"]`, root);
     if (!el) return;
-    // Keep the existing iframe so playback isn't interrupted
-    const iframe = el.querySelector('iframe');
+    // Update everything except the player: moving or replacing its iframe would reload it and stop playback
     const tmp = document.createElement('div');
     tmp.innerHTML = cardHtml(state.tracks[i], i);
     const fresh = tmp.firstElementChild;
-    fresh.querySelector('iframe').replaceWith(iframe);
-    el.replaceWith(fresh);
+    el.className = fresh.className;
+    el.children[1].replaceWith(fresh.children[1]);
+    const left = el.children[0];
+    [...left.children].filter(c => !c.classList.contains('player')).forEach(c => c.remove());
+    [...fresh.children[0].children].filter(c => !c.classList.contains('player')).forEach(c => left.appendChild(c));
 }
 
 // ---------- decisions ----------
@@ -250,6 +264,7 @@ function setFocus(i) {
 }
 
 function bind() {
+    bindPlayerClicks($('#cards', root));
     $('#cards', root).addEventListener('click', (e) => {
         const card = e.target.closest('.song-card');
         if (!card) return;
@@ -299,6 +314,10 @@ function onKey(e) {
     else if (e.key === 'z') undo();
     else if (e.key === '/') { e.preventDefault(); $('#search', root).focus(); }
     else if (!t) return;
+    else if (e.key === ' ') { e.preventDefault(); control(t.track_id, 'toggle'); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); control(t.track_id, 'back'); }
+    else if (e.key === 'ArrowRight') { e.preventDefault(); control(t.track_id, 'fwd'); }
+    else if (e.key === 'm') control(t.track_id, 'mid');
     else if (e.key === 'a') decideRest([state.focus], 'approved');
     else if (e.key === 'd') decideRest([state.focus], 'declined');
     else if (/^Digit[1-9]$/.test(e.code)) {
