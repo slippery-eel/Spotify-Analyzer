@@ -23,7 +23,7 @@ DB_FILE = os.path.join(_HERE, 'spotify_data.db')
 TOKEN_FILE = os.path.join(_HERE, 'token.json')
 
 VIBE_PLAYLISTS = [
-    {'key': 'summer', 'name': 'summer time vibes',
+    {'key': 'summer', 'name': 'summer time vibes 🏖',
      'description': 'Mostly any fun song, things I could play around others on a beach. But also '
                     'anything that personally reminds me of summer: a warm, sunny feel. Includes some '
                     'songs that are not necessarily fun party songs.'},
@@ -33,16 +33,16 @@ VIBE_PLAYLISTS = [
      'description': 'BOPs. Anything that makes you want to dance without being a rager or dance-club '
                     'song. Chiller than that but still groovy, funky and fun. Most have a really strong '
                     'beat and rhythm. Most of these probably also fit summer time vibes.'},
-    {'key': 'spooky', 'name': 'Spooky',
+    {'key': 'spooky', 'name': 'Spooky 👻',
      'description': 'Spooky Halloween-esque vibes, but not legitimately scary or intense like '
                     'soundtracks. Something you could put on for a Halloween party.'},
-    {'key': 'damn_im_good', 'name': "damn i'm good",
+    {'key': 'damn_im_good', 'name': "d a m n   i ' m   g o o d",
      'description': 'No specific vibe: songs with a really cool and interesting sound. Stuff I could '
                     'show anyone and they would say "oh this is awesome". Prioritize cool sounds and '
                     'rhythms and just COOL songs.'},
     {'key': 'gym', 'name': 'GYM BANGERS',
      'description': 'The most fast-paced bangers and hardest songs for the gym.'},
-    {'key': 'villain_1700s', 'name': '1700s Villain Vibe',
+    {'key': 'villain_1700s', 'name': '1700s Villain Vibe 🧐☠️🔥',
      'description': 'Any classical music with an ominous or mischievous feeling.'},
     {'key': 'thoughtful', 'name': 'thoughtful',
      'description': 'Beautiful, contemplative, even emotional orchestral music. Soundtracks for the '
@@ -53,13 +53,13 @@ VIBE_PLAYLISTS = [
     {'key': 'suns_comin_up', 'name': "Sun's comin up",
      'description': 'Hopeful, optimistic. Not necessarily happy; some are bittersweet, but something '
                     'about them feels optimistic.'},
-    {'key': 'log_cabins', 'name': 'Log cabins',
+    {'key': 'log_cabins', 'name': 'Log cabins 🤠🌲🏕🌲',
      'description': 'Any acoustic and folk music.',
      'rule': 'Only acoustic or folk music. Never suggest electronic, heavily produced, or non-acoustic songs.'},
     {'key': 'alien_christmas', 'name': 'alien christmas',
      'description': 'Songs that for whatever reason feel vaguely Christmas-y. Cozy and happy, maybe '
                     'even winter vibes.'},
-    {'key': 'zoinks', 'name': 'Zoinks Scoob are you sure that was just weed',
+    {'key': 'zoinks', 'name': 'Zoinks Scoob are you sure that was just weed?',
      'description': 'TRIPPY songs. Crazy and big sounds, even experimental or new electronic sounds.'},
     {'key': 'moody', 'name': 'moody',
      'description': 'Depressed songs, but not super sad or super emotional; most are fairly '
@@ -71,7 +71,7 @@ VIBE_PLAYLISTS = [
      'description': 'Quiet, nice and simple piano and instrumental music.'},
     {'key': 'mood_fire', 'name': '🔥m🔥o👿o🔥d🔥',
      'description': 'Like Spooky, but ACTUALLY scary and intense. A lot of soundtracks.'},
-    {'key': 'oo_la_la', 'name': 'Oo la la',
+    {'key': 'oo_la_la', 'name': 'Oo la la  🥰💜',
      'description': 'Nice cute love songs, plus sexy songs.'},
     {'key': 'one_of_those_nights', 'name': 'one of those nights',
      'description': 'Any sad and heavy song that makes you feel yourself.'},

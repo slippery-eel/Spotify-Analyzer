@@ -7,6 +7,7 @@ Usage: python sync.py
 import difflib
 import json
 import re
+import sys
 from datetime import datetime, timezone
 
 import config
@@ -144,6 +145,7 @@ def report(conn, matched, unmatched, user_playlists):
 
 
 def main():
+    sys.stdout.reconfigure(encoding='utf-8')  # Windows console defaults to cp1252; playlist names have emoji
     storage.init_db()
     conn = storage.get_connection()
     try:
