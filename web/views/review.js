@@ -1,4 +1,8 @@
-// Review queue UI: one card per song, approve/decline each suggested playlist.
+// Review queue: one card per song, approve/decline each suggested playlist.
+import { $, $$, api, esc, toast } from '../lib.js';
+import { refreshBadges } from '../app.js';
+
+let root;
 const state = {
     view: 'pending', vibe: '', q: '', sort: 'score',
     tracks: [], total: 0, focus: 0,
@@ -6,43 +10,79 @@ const state = {
     undo: [],   // stack of [{track_id, vibe_key, status: previous}] batches
 };
 
-const $ = (sel) => document.querySelector(sel);
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-async function api(path, body) {
-    const res = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
-    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-    return res.json();
+export async function mount(el, [vibe]) {
+    root = el;
+    state.vibe = vibe || '';
+    state.undo = [];
+    root.innerHTML = `
+        <header class="page-head">
+            <h1>Review suggestions</h1>
+            <p class="muted" id="summary"></p>
+        </header>
+        <div class="review-layout">
+            <aside class="side-list" aria-label="Filter by playlist">
+                <button class="pl-item" data-vibe="">All playlists <span class="count" id="all-count"></span></button>
+                <div id="playlist-list"></div>
+            </aside>
+            <div>
+                <div class="toolbar">
+                    <div class="tabs" id="tabs">
+                        ${['pending', 'approved', 'declined', 'added'].map(v =>
+                            `<button data-view="${v}" class="${v === state.view ? 'active' : ''}">${v[0].toUpperCase() + v.slice(1)} <span class="count"></span></button>`).join('')}
+                    </div>
+                    <div class="toolbar-row">
+                        <input id="search" type="search" placeholder="Search title, artist, album  ( / )" value="${esc(state.q)}">
+                        <select id="sort">
+                            <option value="score">Best fit first</option>
+                            <option value="added">Recently liked first</option>
+                        </select>
+                        <button class="btn" id="approve-page" title="Approve every pending suggestion shown">Approve all shown</button>
+                        <button class="btn" id="decline-page" title="Decline every pending suggestion shown">Decline all shown</button>
+                    </div>
+                    <p id="filter-desc" class="muted small"></p>
+                </div>
+                <div id="cards"></div>
+                <div class="more">
+                    <button class="btn" id="load-more" hidden>Load more</button>
+                    <div id="empty" class="empty" hidden></div>
+                </div>
+            </div>
+        </div>
+        <footer class="hotkeys">
+            <span><kbd>j</kbd>/<kbd>k</kbd> next/prev song</span>
+            <span><kbd>1</kbd>–<kbd>9</kbd> approve suggestion</span>
+            <span><kbd>Shift</kbd>+<kbd>1</kbd>–<kbd>9</kbd> decline</span>
+            <span><kbd>a</kbd> approve rest</span>
+            <span><kbd>d</kbd> decline rest</span>
+            <span><kbd>z</kbd> undo</span>
+        </footer>`;
+    $('#sort', root).value = state.sort;
+    bind();
+    document.addEventListener('keydown', onKey);
+    await loadStats();
+    await loadQueue();
 }
 
-let toastTimer;
-function toast(msg) {
-    const el = $('#toast');
-    el.textContent = msg;
-    el.hidden = false;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.hidden = true; }, 2500);
+export function unmount() {
+    document.removeEventListener('keydown', onKey);
 }
 
-// ---------- stats + sidebar ----------
+// ---------- stats + playlist list ----------
 
 async function loadStats() {
     const s = await api('/api/stats');
     state.playlists = s.playlists;
     state.names = Object.fromEntries(s.playlists.map(p => [p.key, p.name]));
-    $('#login-link').hidden = s.logged_in;
-    $('#summary').textContent = `${s.liked} liked songs · ${s.classified} classified`;
-    document.querySelectorAll('#tabs button').forEach(b => {
-        b.querySelector('.count').textContent = s.counts[b.dataset.view] || 0;
-    });
-    $('#all-count').textContent = s.counts[state.view] || 0;
-    $('#playlist-list').innerHTML = s.playlists.map(p => `
+    $('#summary', root).textContent = `${s.liked} liked songs · ${s.classified} classified so far`;
+    $$('#tabs button', root).forEach(b => { b.querySelector('.count').textContent = s.counts[b.dataset.view] || 0; });
+    $('#all-count', root).textContent = s.counts[state.view] || 0;
+    $('#playlist-list', root).innerHTML = s.playlists.map(p => `
         <button class="pl-item ${state.vibe === p.key ? 'active' : ''}" data-vibe="${p.key}" title="${esc(p.description)}">
             <span class="name">${esc(p.name)}</span><span class="count">${p.counts[state.view] || 0}</span>
         </button>`).join('');
-    document.querySelector('.pl-item[data-vibe=""]').classList.toggle('active', !state.vibe);
+    $('.pl-item[data-vibe=""]', root).classList.toggle('active', !state.vibe);
     const p = s.playlists.find(p => p.key === state.vibe);
-    $('#filter-desc').textContent = p ? `${p.name} (${p.size} songs): ${p.description}` : '';
+    $('#filter-desc', root).textContent = p ? `${p.name} (${p.size} songs): ${p.description}` : '';
 }
 
 // ---------- queue ----------
@@ -58,13 +98,19 @@ async function loadQueue(append = false) {
     render();
 }
 
+function orderedSuggestions(t) {
+    // The filtered playlist first, then by score
+    return [...t.suggestions].sort((a, b) =>
+        (b.vibe_key === state.vibe) - (a.vibe_key === state.vibe) || (b.score ?? 101) - (a.score ?? 101));
+}
+
 function cardHtml(t, i) {
     const sugs = orderedSuggestions(t);
     const done = state.view === 'pending' && !sugs.some(s => s.status === 'pending');
     const suggested = new Set(t.suggestions.map(s => s.vibe_key).concat(t.in_playlists));
     const addable = state.playlists.filter(p => !suggested.has(p.key));
     return `
-    <article class="card ${i === state.focus ? 'focused' : ''} ${done ? 'done' : ''}" data-i="${i}">
+    <article class="song-card ${i === state.focus ? 'focused' : ''} ${done ? 'done' : ''}" data-i="${i}">
         <div>
             <iframe loading="lazy" src="https://open.spotify.com/embed/track/${t.track_id}?theme=0" allow="encrypted-media" title="Play ${esc(t.name)}"></iframe>
             <div class="label">Genres / tags</div>
@@ -79,17 +125,11 @@ function cardHtml(t, i) {
             <div class="label">Suggested playlists</div>
             <div class="sugs">${sugs.map((s, j) => sugHtml(s, j)).join('')}</div>
             ${addable.length && state.view !== 'added' ? `<div class="add-row">
-                <select data-add="${i}"><option value="">+ Add to another playlist…</option>
+                <select data-add="${i}" aria-label="Add to another playlist"><option value="">+ Add to another playlist…</option>
                 ${addable.map(p => `<option value="${p.key}">${esc(p.name)}</option>`).join('')}</select>
             </div>` : ''}
         </div>
     </article>`;
-}
-
-function orderedSuggestions(t) {
-    // The filtered playlist first, then by score
-    return [...t.suggestions].sort((a, b) =>
-        (b.vibe_key === state.vibe) - (a.vibe_key === state.vibe) || (b.score ?? 101) - (a.score ?? 101));
 }
 
 function sugHtml(s, j) {
@@ -103,24 +143,24 @@ function sugHtml(s, j) {
             <div class="reason">${esc(s.reason || '')}</div>
         </div>
         ${locked ? '<span class="status-tag">added ✓</span>' : `<div class="actions">
-            <button class="ok" data-act="approved" title="Approve">✓</button>
-            <button class="no" data-act="declined" title="Decline">✗</button>
+            <button class="ok" data-act="approved" title="Approve" aria-label="Approve">✓</button>
+            <button class="no" data-act="declined" title="Decline" aria-label="Decline">✗</button>
         </div>`}
     </div>`;
 }
 
 function render() {
-    $('#cards').innerHTML = state.tracks.map(cardHtml).join('');
-    $('#load-more').hidden = state.tracks.length >= state.total;
-    const empty = state.tracks.length === 0;
-    $('#empty').hidden = !empty;
-    $('#empty').textContent = state.view === 'pending'
-        ? 'Nothing pending here. Run the classifier to get suggestions, or pick another playlist.'
+    $('#cards', root).innerHTML = state.tracks.map(cardHtml).join('');
+    $('#load-more', root).hidden = state.tracks.length >= state.total;
+    const empty = $('#empty', root);
+    empty.hidden = state.tracks.length > 0;
+    empty.innerHTML = state.view === 'pending'
+        ? 'Nothing to review here yet. Suggestions appear after the <a href="#/pipeline/classify">Classify</a> step runs.'
         : `No ${state.view} suggestions here yet.`;
 }
 
 function rerenderCard(i) {
-    const el = document.querySelector(`.card[data-i="${i}"]`);
+    const el = $(`.song-card[data-i="${i}"]`, root);
     if (!el) return;
     // Keep the existing iframe so playback isn't interrupted
     const iframe = el.querySelector('iframe');
@@ -148,6 +188,7 @@ async function decide(items, { recordUndo = true } = {}) {
     for (const c of res.changed) applyLocal(c.track_id, c.vibe_key, c.status);
     if (res.skipped.length) toast(`Skipped ${res.skipped.length}: ${res.skipped[0].reason}`);
     loadStats();
+    refreshBadges();
 }
 
 function applyLocal(trackId, vibe, status) {
@@ -191,59 +232,59 @@ async function undo() {
 function setFocus(i) {
     if (!state.tracks.length) return;
     state.focus = Math.max(0, Math.min(i, state.tracks.length - 1));
-    document.querySelectorAll('.card').forEach(c => c.classList.toggle('focused', +c.dataset.i === state.focus));
-    document.querySelector(`.card[data-i="${state.focus}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    $$('.song-card', root).forEach(c => c.classList.toggle('focused', +c.dataset.i === state.focus));
+    $(`.song-card[data-i="${state.focus}"]`, root)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 
-$('#cards').addEventListener('click', (e) => {
-    const card = e.target.closest('.card');
-    if (!card) return;
-    const i = +card.dataset.i;
-    if (i !== state.focus) setFocus(i);
-    const btn = e.target.closest('button[data-act]');
-    if (btn) toggle(i, btn.closest('.sug').dataset.vibe, btn.dataset.act);
-});
+function bind() {
+    $('#cards', root).addEventListener('click', (e) => {
+        const card = e.target.closest('.song-card');
+        if (!card) return;
+        const i = +card.dataset.i;
+        if (i !== state.focus) setFocus(i);
+        const btn = e.target.closest('button[data-act]');
+        if (btn) toggle(i, btn.closest('.sug').dataset.vibe, btn.dataset.act);
+    });
+    $('#cards', root).addEventListener('change', (e) => {
+        const sel = e.target.closest('select[data-add]');
+        if (!sel || !sel.value) return;
+        decide([{ track_id: state.tracks[+sel.dataset.add].track_id, vibe_key: sel.value, status: 'approved' }]);
+    });
+    $('.side-list', root).addEventListener('click', (e) => {
+        const b = e.target.closest('.pl-item');
+        if (!b) return;
+        state.vibe = b.dataset.vibe;
+        history.replaceState(null, '', state.vibe ? `#/review/${state.vibe}` : '#/review');
+        loadStats();
+        loadQueue();
+    });
+    $('#tabs', root).addEventListener('click', (e) => {
+        const b = e.target.closest('button[data-view]');
+        if (!b) return;
+        state.view = b.dataset.view;
+        $$('#tabs button', root).forEach(x => x.classList.toggle('active', x === b));
+        loadStats();
+        loadQueue();
+    });
+    let searchTimer;
+    $('#search', root).addEventListener('input', (e) => {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => { state.q = e.target.value.trim(); loadQueue(); }, 250);
+    });
+    $('#sort', root).addEventListener('change', (e) => { state.sort = e.target.value; loadQueue(); });
+    $('#load-more', root).addEventListener('click', () => loadQueue(true));
+    $('#approve-page', root).addEventListener('click', () => decideRest(state.tracks.map((_, i) => i), 'approved'));
+    $('#decline-page', root).addEventListener('click', () => decideRest(state.tracks.map((_, i) => i), 'declined'));
+}
 
-$('#cards').addEventListener('change', (e) => {
-    const sel = e.target.closest('select[data-add]');
-    if (!sel || !sel.value) return;
-    decide([{ track_id: state.tracks[+sel.dataset.add].track_id, vibe_key: sel.value, status: 'approved' }]);
-});
-
-document.querySelector('.sidebar').addEventListener('click', (e) => {
-    const b = e.target.closest('.pl-item');
-    if (!b) return;
-    state.vibe = b.dataset.vibe;
-    loadStats();
-    loadQueue();
-});
-
-$('#tabs').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-view]');
-    if (!b) return;
-    state.view = b.dataset.view;
-    document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('active', x === b));
-    loadStats();
-    loadQueue();
-});
-
-let searchTimer;
-$('#search').addEventListener('input', (e) => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => { state.q = e.target.value.trim(); loadQueue(); }, 250);
-});
-$('#sort').addEventListener('change', (e) => { state.sort = e.target.value; loadQueue(); });
-$('#load-more').addEventListener('click', () => loadQueue(true));
-$('#approve-page').addEventListener('click', () => decideRest(state.tracks.map((_, i) => i), 'approved'));
-$('#decline-page').addEventListener('click', () => decideRest(state.tracks.map((_, i) => i), 'declined'));
-
-document.addEventListener('keydown', (e) => {
+function onKey(e) {
     if (e.target.matches('input, select, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!$('#modal-root').hidden) return;
     const t = state.tracks[state.focus];
     if (e.key === 'j') setFocus(state.focus + 1);
     else if (e.key === 'k') setFocus(state.focus - 1);
     else if (e.key === 'z') undo();
-    else if (e.key === '/') { e.preventDefault(); $('#search').focus(); }
+    else if (e.key === '/') { e.preventDefault(); $('#search', root).focus(); }
     else if (!t) return;
     else if (e.key === 'a') decideRest([state.focus], 'approved');
     else if (e.key === 'd') decideRest([state.focus], 'declined');
@@ -251,6 +292,4 @@ document.addEventListener('keydown', (e) => {
         const s = orderedSuggestions(t)[+e.code.slice(5) - 1];
         if (s) toggle(state.focus, s.vibe_key, e.shiftKey ? 'declined' : 'approved');
     }
-});
-
-loadStats().then(() => loadQueue()).catch(e => toast(`Could not reach the server: ${e.message}`));
+}

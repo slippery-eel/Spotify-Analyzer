@@ -5,7 +5,6 @@ Only one job runs at once so two writers never fight over the SQLite file (the
 taking a progress(msg, done=None, total=None) callback and returning a summary string.
 """
 import threading
-import time
 from datetime import datetime, timezone
 
 import storage
@@ -13,7 +12,6 @@ import storage
 _lock = threading.Lock()
 _current = None          # dict for the running job, read by the API for live progress
 _REGISTRY = {}           # job_type -> (label, fn)
-PROGRESS_WRITE_INTERVAL = 2.0  # seconds between job_runs progress writes
 
 
 def _now():
@@ -59,14 +57,11 @@ def start(job_type, **params):
 
 def _run(job, fn, params):
     global _current
-    last_write = [0.0]
 
+    # Progress stays in memory only: jobs hold an open write transaction on their own
+    # connection, so writing job_runs from here would wait on that lock until it times out.
     def progress(msg, done=None, total=None):
         _current.update(message=msg, done=done, total=total)
-        if time.time() - last_write[0] >= PROGRESS_WRITE_INTERVAL:
-            last_write[0] = time.time()
-            _update(job['id'], 'UPDATE job_runs SET message = ?, done = ?, total = ? WHERE id = ?',
-                    (msg, done, total, job['id']))
 
     try:
         summary = fn(progress, **params)

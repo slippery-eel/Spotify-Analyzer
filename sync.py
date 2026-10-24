@@ -68,6 +68,8 @@ def sync_liked(conn, progress=_print_progress):
         if t:
             storage.upsert_track(conn, t)
             rows.append((t['id'], it.get('added_at')))
+        if len(rows) % 100 == 0 and rows:
+            conn.commit()  # keep write transactions short so the app's other writes don't wait
         if len(rows) % 500 == 0 and rows:
             progress(f'Liked songs: {len(rows)} so far')
     conn.execute('DELETE FROM liked')  # full refresh so un-liked songs drop out

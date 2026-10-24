@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Spotify Analyzer</title>
+    <link rel="stylesheet" href="/web/app.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<div class="shell">
+    <nav class="nav" aria-label="Main">
+        <a class="nav-brand" href="#/">Spotify Analyzer</a>
+        <a class="nav-link" href="#/" data-route="home">Home</a>
+        <div class="nav-section">Sort liked songs</div>
+        <a class="nav-link" href="#/pipeline" data-route="pipeline">Pipeline</a>
+        <a class="nav-link" href="#/review" data-route="review">Review <span class="nav-badge" id="badge-review" hidden></span></a>
+        <div class="nav-section">Explore</div>
+        <a class="nav-link" href="#/library" data-route="library">Library</a>
+        <a class="nav-link" href="#/playlists" data-route="playlists">Playlists</a>
+        <div class="nav-spacer"></div>
+        <a class="nav-link" href="#/account" data-route="account">Account <span class="nav-dot" id="dot-account" hidden></span></a>
+    </nav>
+    <main id="view" class="view"></main>
+</div>
+
+<div id="jobs-dock" class="jobs-dock" hidden></div>
+<div id="toast" class="toast" role="status" hidden></div>
+<div id="modal-root" hidden></div>
+
+<script type="module" src="/web/app.js"></script>
+</body>
+</html>

@@ -1,63 +1,75 @@
-# Spotify Playlist Helper
+# Spotify Analyzer
 
-A browser-based tool for analyzing your Spotify library. Find liked songs that aren't in any playlist, explore your music taste with charts, browse your playlists, and save filtered results as new playlists — all without any server or account required.
-
-**No data is ever collected.** Everything runs in your browser using your own Spotify credentials.
+A local app for exploring your Spotify library and sorting your liked songs into your own vibe playlists.
+It runs on your computer: a small Python server keeps your data in a local SQLite file and serves the app
+at `http://127.0.0.1:8080`.
 
 ---
 
 ## Features
 
-- **Liked Songs Not in Playlists** — find every liked song you haven't organized into a playlist
-- **All Liked Songs Analysis** — genre breakdown, top artists, and a liked-over-time chart
-- **Playlist Browser** — browse and filter tracks within any of your playlists
-- Filter by genre, artist, or date range; sort any column; deduplicate similar tracks
-- Select tracks and save them as a new Spotify playlist or add to an existing one
+**Sort liked songs** (the Pipeline page walks you through it)
+1. **Sync**: pulls your liked songs, all your playlists, and artist genres (read-only).
+2. **Fetch tags + lyrics**: Last.fm mood/style tags and LRCLIB lyrics for every song.
+3. **Vibe profiles**, 4. **Classify**: *coming next*. An AI classifier suggests which vibe playlists each liked song fits, with a score and a reason.
+5. **Review**: approve or decline each suggestion song by song, with a Spotify player, hotkeys and undo.
+6. **Add to Spotify**: *coming next*. Adds approved songs to their playlists. Add-only; nothing is removed from Liked Songs.
+
+**Explore**
+- **Library**: every liked song with genre/tag, artist and date filters, duplicate hiding, sortable columns,
+  charts (top genres, top artists, liked over time), and a coverage bar for songs that are in no playlist.
+  Select songs and **save them as a new playlist** or add them to an existing one.
+- **Playlists**: browse all your playlists and their songs, and copy a playlist's song list.
 
 ---
 
 ## Setup
 
 ### 1. Create a Spotify Developer App
+1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and log in.
+2. Click **Create app**, give it any name and description, and select **Web API**.
+3. Under **Redirect URIs**, add `http://127.0.0.1:8080/callback` (not `localhost`; Spotify blocks it).
+4. Save, then copy the **Client ID** and **Client Secret**.
 
-1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard) and log in
-2. Click **Create app**
-3. Fill in any name and description
-4. Under **Redirect URIs**, add: `http://127.0.0.1:8080`
-5. Under **APIs used**, select **Web API**
-6. Save — then open the app and copy your **Client ID** and **Client Secret**
+### 2. Add your keys
+Copy `.env.example` to `.env` and fill it in:
 
-### 2. Run the app locally
+| Key | Needed for |
+|---|---|
+| `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET` | Login and sync |
+| `LASTFM_API_KEY` | Mood/style tags ([get a free key](https://www.last.fm/api/account/create)) |
+| `OPENAI_API_KEY` | Classifying songs into vibes (coming next) |
 
-Clone or download this repo, then serve it with any static file server:
+`.env` is gitignored, so your keys never leave your computer.
 
+### 3. Run it
 ```bash
-# Python (built-in)
-python -m http.server 8080
+pip install -r requirements.txt
+python server.py
+```
+Open **http://127.0.0.1:8080**, go to **Account**, and log in with Spotify. Then follow the **Pipeline** page.
 
-# or Node
-npx serve . -p 8080
+Your vibe playlists and what each one is for are defined in `config.py` (`VIBE_PLAYLISTS`).
+
+---
+
+## Command line
+Every pipeline step can also be run from a terminal:
+```bash
+python spotify_client.py login   # log in without the app
+python sync.py                   # sync + a text report
+python enrich.py                 # tags + lyrics
+python enrich.py retry-lyrics    # re-try songs that had no lyrics
+python -m pytest                 # tests (no network calls)
 ```
 
-Open **`http://127.0.0.1:8080`** in your browser (not `localhost` — Spotify blocks it).
-
-### 3. Enter your credentials
-
-Paste your Client ID, Client Secret, and `http://127.0.0.1:8080` as the Redirect URI, then click **Save & Authenticate**. You'll be redirected to Spotify to authorize the app.
-
 ---
 
-## Privacy & Security
-
-- Your credentials are encrypted with AES-GCM (Web Crypto API) before being stored in your browser's `localStorage`
-- Nothing is sent to any server — all API calls go directly to Spotify's API from your browser
-- No analytics, no tracking, no data collection of any kind
-- To remove your stored credentials, click **Sign Out** in the app, or clear your browser's localStorage manually
-
----
+## Privacy
+- Everything stays on your computer: `spotify_data.db` (your synced library) and `token.json` (your Spotify login) are both gitignored.
+- The app only talks to Spotify, Last.fm, LRCLIB and (once classification exists) OpenAI.
+- **Sign out** on the Account page deletes the saved login token.
 
 ## Notes
-
-- The access token lasts for 1 hour. If queries start failing, refresh the page and re-authenticate
-- Large libraries (1000+ liked songs) may take a moment to load — all pagination is handled automatically
-- Write access (`playlist-modify-*`) is required for the "Save as Playlist" feature. If you authenticated before this was needed, you'll see a re-auth prompt
+- Spotify only lets apps read songs from playlists you **own or collaborate on**, so followed playlists are listed without their songs.
+- Spotify removed popularity and audio features (energy, valence, …) from its API for apps like this one, so they aren't shown.

@@ -28,61 +28,45 @@ git push
 
 ## Running the App
 
-No build step. Open `index.html` directly in a browser, or serve it with any static file server:
-
 ```bash
-python -m http.server 8080
-# or
-npx serve .
+pip install -r requirements.txt
+python server.py          # http://127.0.0.1:8080
+python -m pytest          # stub-based tests, no network
 ```
 
-**Note:** Spotify now blocks `localhost` as a redirect URI. Use `http://127.0.0.1:8080/` instead — both when starting the server and when registering the redirect URI in the Spotify Developer Dashboard.
+Keys live in `.env` (see `.env.example`): Spotify client ID/secret, Last.fm key, OpenAI key.
+Spotify blocks `localhost`, so the redirect URI is `http://127.0.0.1:8080/callback`, and the server must run on port 8080.
+`SPOTIFY_DB=<path>` + `PORT=<n>` run the app against a copy of the DB (used for UI testing with demo data).
 
 ## Architecture
 
-Single-page app with no framework, no bundler, no backend — three files total:
+One local app: a FastAPI server over a SQLite file, serving a plain-JS single-page UI (no framework, no bundler).
+The original static analyzer (`index.html`/`script.js`/`styles.css`) was retired; its features were ported to Library/Playlists.
 
-- **`index.html`** — Static layout with sections toggled via `style.display`
-- **`script.js`** — All logic in one `SpotifyPlaylistHelper` class (instantiated at bottom of file)
-- **`styles.css`** — Spotify-themed glassmorphism design
+### Backend (repo root)
+- **`config.py`**: `.env` loading, paths, and `VIBE_PLAYLISTS` (key, exact Spotify name, my description, optional hard `rule`).
+- **`spotify_client.py`**: OAuth code flow, `token.json` save/refresh, `get`/`post`/`paginate` with 401 refresh and 429 Retry-After.
+  Only post-Feb-2026 endpoints: `/me/tracks`, `/me/playlists` (GET/POST), `/playlists/{id}/items` (GET/POST), `/artists/{id}`.
+- **`storage.py`**: schema + `init_db()` (also migrates the old vibe-only `playlists` table) and `get_meta`/`set_meta`.
+  No WAL: the DB lives in OneDrive.
+- **`sync.py`**: liked songs, every playlist (songs only for owned/collaborative ones; Spotify forbids others), artist genres.
+  `snapshot_id` skip makes re-syncs fast. `run(progress)` for the app, `main()` for the CLI report.
+- **`enrich.py`**: Last.fm tags (track → cleaned title → artist fallback) and LRCLIB lyrics; misses cached, server errors not.
+- **`jobs.py`**: one background job at a time (thread), history in `job_runs`. Progress is in-memory only: a job holds an
+  open write transaction, so writing progress to the DB from the same thread would deadlock on SQLite's lock.
+- **`library.py`**: Library/Playlists queries, dedupe (`sync.normalize_for_dedup`, same key as the old app), analytics, Save as Playlist.
+- **`review.py`**: review queue + decisions. `added` rows are locked; manual approvals create rows that undo can remove.
+- **`server.py`**: `/login`, `/callback`, and the JSON API (`/api/overview`, `/api/jobs`, `/api/library`, `/api/playlists`,
+  `/api/save-playlist`, `/api/stats`, `/api/queue`, `/api/decide`, `/api/logout`).
 
-### Authentication Flow
-Uses Spotify OAuth 2.0 authorization code flow. The user supplies their own `client_id`, `client_secret`, and `redirect_uri`. Credentials are AES-GCM encrypted via the Web Crypto API before being stored in `localStorage`. On page load, `checkUrlParams()` detects the OAuth `?code=` callback and calls `exchangeCodeForToken()`.
+### Frontend (`web/`)
+- **`index.html`** + **`app.js`**: shell, hash router (`#/`, `#/pipeline[/step]`, `#/review[/vibe]`, `#/library[/not_in_playlists]`,
+  `#/playlists[/id]`, `#/account`), nav badges, and the jobs dock (polls `/api/jobs` while a job runs).
+- **`views/*.js`**: one ES module per page exporting `mount(el, params)` and optional `unmount()` / `onJobDone()`.
+  `steps.js` defines the pipeline steps shared by Home and Pipeline; `save.js` is the Save as Playlist modal.
+- **`app.css`**: tokens on `:root` with light/dark themes; Chart.js 4.4.1 from cdnjs for Library charts.
 
-### OAuth Scopes
-`user-library-read playlist-read-private playlist-read-collaborative playlist-modify-private playlist-modify-public`
-
-Write scopes (`playlist-modify-*`) are needed for Save as Playlist. If a user authenticated before these were added, they'll get a 403 and see a re-auth prompt in the modal.
-
-### Query System
-Each query button in the UI has a `data-query` attribute. `handleQueryRun()` dispatches to one of three methods:
-- `findLikedSongsNotInPlaylists()` — diffs liked songs against all playlist tracks
-- `getAllLikedSongsAnalysis()` — fetches liked songs + renders Chart.js charts
-- `browsePlaylistsMode()` — lists playlists, drills into individual playlist tracks
-
-### Data Cache
-`this.dataCache` holds enriched liked songs, playlist tracks/map, and user ID across queries to avoid redundant API calls. `ensureLikedSongsCache()` and `ensurePlaylistCache()` are called with `Promise.all()` so both fetch in parallel on first run.
-
-### Filter & Table State
-- `this.currentFilters` — `{ genre, artistText, dedupeEnabled, dateFrom, dateTo }`
-- `this.selectedTrackIds` — Set of track IDs checked in the table
-- `this.currentSort` — `{ column, direction }`
-- Filter bar is rendered once in `displayResults()`; only `#track-table-only` is rebuilt on changes via `refreshTable()`
-
-### Results Display
-`currentResults` stores the last fetched data. `displayResults()` renders the filter bar + table. Charts (genre doughnut, top artists bar, liked-over-time bar) are rendered into `#genreChart`, `#artistChart`, `#timelineChart` via Chart.js (CDN).
-
-### Track Table Columns
-Track | Artists | Genre | Popularity | Playlists (analysis mode only) | Added | Open
-
-All columns except Genre and Open are sortable. "Added" defaults to descending (newest first). Date range filters use `<input type="month">` and compare ISO strings lexicographically.
-
-### Deduplication
-`deduplicateTracks()` normalizes title (strips parentheticals) + first artist into a key. For the "Not in Playlists" query it also cross-deduplicates against playlist versions. Preferred duplicate is the one in the most playlists, then highest popularity.
-
-### Save as Playlist
-"Save as Playlist" button appears below the filter bar. Opens a modal with two tabs:
-- **New Playlist** — creates a private playlist via `POST /v1/users/{id}/playlists`
-- **Add to Existing** — fetches user playlists and lets user pick one from a dropdown
-
-If rows are selected (`selectedTrackIds`), only those tracks are saved. Otherwise saves all filtered tracks. `spotifyApiCall(url, options)` supports POST by destructuring `options.headers` to avoid overwriting the `Authorization` header.
+### Data notes
+- Spotify removed popularity and audio features for this app, so neither is used.
+- Only ~half of artists have Spotify genres; Last.fm tags fill the gap (mostly artist-level).
+- Library's "Playlists that count…" ignore list is stored per browser in `localStorage` (`ignoredPlaylists`).

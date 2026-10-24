@@ -12,7 +12,6 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setattr(config, 'DB_FILE', str(tmp_path / 'j.db'))
     storage.init_db()
     monkeypatch.setattr(jobs, '_current', None)
-    monkeypatch.setattr(jobs, 'PROGRESS_WRITE_INTERVAL', 0)
 
 
 def _wait_idle():
@@ -78,3 +77,17 @@ def test_migration_rebuilds_old_playlists_table(tmp_path, monkeypatch):
     c.execute("INSERT INTO playlists (playlist_id, name) VALUES ('p2', 'other')")  # vibe_key may be NULL now
     assert c.execute('SELECT COUNT(*) FROM playlist_items').fetchone()[0] == 1
     assert c.execute('PRAGMA foreign_key_check').fetchall() == []
+
+
+def test_progress_does_not_deadlock_with_open_write_transaction():
+    """Regression: a job holding a write transaction must be able to report progress."""
+    def writer(progress):
+        conn = storage.get_connection()
+        conn.execute("INSERT INTO meta VALUES ('k', 'v')")   # open write transaction
+        progress('working', 1, 2)
+        conn.commit(); conn.close()
+        return 'ok'
+    jobs.register('writer', 'Writer', writer)
+    jobs.start('writer')
+    _wait_idle()
+    assert jobs.recent()[0]['status'] == 'success'
