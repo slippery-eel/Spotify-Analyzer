@@ -1,7 +1,7 @@
 // Review queue: one card per song, approve/decline each suggested playlist.
 import { $, $$, api, esc, toast } from '../lib.js';
 import { refreshBadges } from '../app.js';
-import { bindPlayerClicks, control, destroyPlayers, mountPlayers, playerHtml } from './player.js';
+import { bindPlayerClicks, control, destroyPlayers, mountPlayers, pause, playerHtml } from './player.js';
 
 let root;
 const state = {
@@ -212,10 +212,21 @@ async function decide(items, { recordUndo = true } = {}) {
     if (recordUndo && res.changed.length) {
         state.undo.push(res.changed.map(c => ({ track_id: c.track_id, vibe_key: c.vibe_key, status: c.previous ?? 'removed' })));
     }
+    // Approving never interrupts the song; declining the card's current playlist means "not this one", so pause it
+    for (const c of res.changed) {
+        if (c.status === 'declined' && c.vibe_key === currentVibe(c.track_id)) pause(c.track_id);
+    }
     for (const c of res.changed) applyLocal(c.track_id, c.vibe_key, c.status);
     if (res.skipped.length) toast(`Skipped ${res.skipped.length}: ${res.skipped[0].reason}`);
     loadStats();
     refreshBadges();
+}
+
+// The playlist a card is "about": the one filtered in the sidebar, else its top suggestion
+function currentVibe(trackId) {
+    if (state.vibe) return state.vibe;
+    const t = state.tracks.find(x => x.track_id === trackId);
+    return t ? orderedSuggestions(t)[0]?.vibe_key : null;
 }
 
 function applyLocal(trackId, vibe, status) {

@@ -145,6 +145,11 @@ export function bindPlayerClicks(root) {
     });
 }
 
+export function pause(id) {
+    const p = players.get(id);
+    if (p?.controller && !p.paused) p.controller.pause();
+}
+
 export function destroyPlayers() {
     for (const p of players.values()) {
         try { p.controller?.destroy(); } catch { /* already gone */ }

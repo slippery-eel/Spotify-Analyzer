@@ -29,7 +29,16 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 WEB = os.path.join(_HERE, 'web')
 
 app = FastAPI(title='Spotify Analyzer')
-app.mount('/web', StaticFiles(directory=WEB), name='web')
+class NoCacheStatic(StaticFiles):
+    """Make the browser re-check app files on every load (cheap 304s locally), so a reload always
+    picks up new code instead of a stale cached module."""
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers['Cache-Control'] = 'no-cache'
+        return response
+
+
+app.mount('/web', NoCacheStatic(directory=WEB), name='web')
 
 jobs.register('sync', 'Sync from Spotify', lambda progress: sync.run(progress)[0])
 jobs.register('enrich', 'Fetch tags + lyrics', lambda progress: enrich.run(progress))
@@ -55,7 +64,7 @@ def _db():
 
 @app.get('/')
 def index():
-    return FileResponse(os.path.join(WEB, 'index.html'))
+    return FileResponse(os.path.join(WEB, 'index.html'), headers={'Cache-Control': 'no-cache'})
 
 
 @app.get('/login')
