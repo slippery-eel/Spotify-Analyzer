@@ -58,8 +58,10 @@ async function render() {
         }).join('')}
         </ol>`;
     root.querySelectorAll('button[data-job]').forEach(b => b.addEventListener('click', async () => {
-        const step = STEPS.find(s => s.extra?.job === b.dataset.job && b.dataset.step === s.key);
-        if (step?.extra.confirm && !(await confirmRun(step.extra.confirm(o)))) return;
+        const extra = STEPS.find(s => s.extra?.job === b.dataset.job && b.dataset.step === s.key)?.extra;
+        const main = STEPS.find(s => s.job === b.dataset.job && !b.dataset.step);
+        const confirm = (extra || main)?.confirm;
+        if (confirm && !(await confirmRun(confirm(o)))) return;
         b.disabled = true;
         if (await startJob(b.dataset.job)) render();
         else b.disabled = false;

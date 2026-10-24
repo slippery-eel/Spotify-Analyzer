@@ -5,11 +5,12 @@ import * as pipeline from './views/pipeline.js';
 import * as profiles from './views/profiles.js';
 import * as review from './views/review.js';
 import * as push from './views/push.js';
+import * as check from './views/fitcheck.js';
 import * as library from './views/library.js';
 import * as playlists from './views/playlists.js';
 import * as account from './views/account.js';
 
-const ROUTES = { '': home, pipeline, profiles, review, push, library, playlists, account };
+const ROUTES = { '': home, pipeline, profiles, review, check, push, library, playlists, account };
 let active = null;
 
 async function route() {
@@ -39,8 +40,12 @@ export async function refreshBadges() {
         b.hidden = !o.review.todo;
         b.textContent = o.review.todo;
         const p = $('#badge-push');
-        p.hidden = !o.review.approved;
-        p.textContent = o.review.approved;
+        const pending = o.review.approved + o.fit.remove;
+        p.hidden = !pending;
+        p.textContent = pending;
+        const c = $('#badge-check');
+        c.hidden = !o.fit.flagged;
+        c.textContent = o.fit.flagged;
         $('#dot-account').hidden = o.account.logged_in;
         renderDock(o.job);
     } catch { /* server down: dock + badges just stay as they are */ }
@@ -88,9 +93,9 @@ function schedulePoll(ms) {
     }, ms);
 }
 
-export async function startJob(type) {
+export async function startJob(type, params = {}) {
     try {
-        const job = await api('/api/jobs', { type });
+        const job = await api('/api/jobs', { type, ...params });
         renderDock(job);
         return job;
     } catch (e) {

@@ -16,6 +16,7 @@ from pydantic import BaseModel
 import classify
 import config
 import enrich
+import fitcheck
 import jobs
 import library
 import profiles
@@ -45,7 +46,8 @@ jobs.register('enrich', 'Fetch tags + lyrics', lambda progress: enrich.run(progr
 jobs.register('profiles', 'Draft vibe profiles', lambda progress: profiles.run(progress))
 jobs.register('classify_pilot', 'Classifier test run', lambda progress: classify.run_pilot(progress))
 jobs.register('classify_all', 'Classify liked songs', lambda progress: classify.run_all(progress))
-jobs.register('push', 'Add approved songs to Spotify', lambda progress: push.run(progress))
+jobs.register('push', 'Apply changes to Spotify', lambda progress: push.run(progress))
+jobs.register('fitcheck', 'Check playlist fit', lambda progress, vibe=None: fitcheck.run(progress, vibe=vibe))
 jobs.register('retry_lyrics', 'Retry missing lyrics',
               lambda progress: enrich.run(progress, which=('lyrics',), retry_misses=True))
 
@@ -107,8 +109,12 @@ def _next_step(o):
         return 'review'
     if o['unclassified']:
         return 'classify'
-    if o['review']['approved']:
+    if o['review']['approved'] or o['fit']['remove']:
         return 'push'
+    if not o['fit']['checked']:
+        return 'fitcheck'
+    if o['fit']['flagged']:
+        return 'fitcheck'
     return None
 
 
@@ -163,8 +169,10 @@ def overview():
             'unclassified': q('SELECT COUNT(*) FROM liked WHERE track_id NOT IN (SELECT track_id FROM classified)'),
             'pilot': _pilot_summary(conn),
             'review': stats['counts'],
+            'fit': review.fit_stats(conn, FIT_THRESHOLD)['totals'],
             'last_jobs': {t: jobs.last_success(t) for t in
-                          ('sync', 'enrich', 'retry_lyrics', 'profiles', 'classify_pilot', 'classify_all', 'push')},
+                          ('sync', 'enrich', 'retry_lyrics', 'profiles', 'classify_pilot', 'classify_all', 'push',
+                           'fitcheck')},
             'job': jobs.current(),
         }
     finally:
@@ -177,6 +185,7 @@ def overview():
 
 class JobStart(BaseModel):
     type: str
+    vibe: Optional[str] = None   # fitcheck: check just this playlist
 
 
 @app.get('/api/jobs')
@@ -187,7 +196,7 @@ def list_jobs():
 @app.post('/api/jobs')
 def start_job(body: JobStart):
     try:
-        return jobs.start(body.type)
+        return jobs.start(body.type, **({'vibe': body.vibe} if body.vibe else {}))
     except KeyError:
         raise HTTPException(404, f'Unknown job {body.type}')
     except jobs.JobBusy as e:
@@ -283,11 +292,68 @@ def update_profile(vibe_key: str, body: ProfileUpdate):
 
 # ---------- push ----------
 
-@app.get('/api/push')
-def get_push():
+@app.get('/api/apply')
+def get_apply():
     conn = _db()
     try:
-        return {'groups': review.get_push_queue(conn), 'recent': review.recent_added(conn)}
+        return {'adds': review.get_push_queue(conn), 'removes': review.get_remove_queue(conn),
+                'recent_added': review.recent_added(conn), 'recent_removed': review.recent_removed(conn)}
+    finally:
+        conn.close()
+
+
+class Restore(BaseModel):
+    track_id: str
+    vibe_key: str
+
+
+@app.post('/api/apply/restore')
+def restore(body: Restore):
+    if jobs.current():
+        raise HTTPException(409, 'Wait for the running job to finish first')
+    try:
+        push.restore(body.track_id, body.vibe_key)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except RuntimeError as e:
+        raise HTTPException(502, str(e))
+    return {'ok': True}
+
+
+# ---------- playlist fit check ----------
+
+FIT_THRESHOLD = 50
+
+
+@app.get('/api/fit')
+def get_fit(view: Literal['flagged', 'all', 'decided'] = 'flagged', vibe: Optional[str] = None,
+            threshold: int = Query(FIT_THRESHOLD, ge=0, le=100), q: Optional[str] = None,
+            offset: int = Query(0, ge=0), limit: int = Query(20, ge=1, le=100)):
+    conn = _db()
+    try:
+        data = review.get_fit_queue(conn, view, vibe or None, threshold, q or None, offset, limit)
+        data['stats'] = review.fit_stats(conn, threshold)
+        return data
+    finally:
+        conn.close()
+
+
+class FitDecision(BaseModel):
+    track_id: str
+    vibe_key: str
+    status: Literal['keep', 'remove', 'unreviewed']
+    move_to: Optional[str] = None
+
+
+class FitDecisions(BaseModel):
+    items: List[FitDecision]
+
+
+@app.post('/api/fit/decide')
+def fit_decide(body: FitDecisions):
+    conn = _db()
+    try:
+        return review.apply_fit_decisions(conn, [d.model_dump() for d in body.items])
     finally:
         conn.close()
 

@@ -32,7 +32,7 @@ export async function mount(el, [vibe]) {
                             ${[['todo', 'To review'], ['done', 'Reviewed']].map(([v, label]) =>
                                 `<button data-view="${v}" class="${v === state.view ? 'active' : ''}">${label} <span class="count"></span></button>`).join('')}
                         </div>
-                        <a class="btn" id="to-push" href="#/push">Add to Spotify <span class="count" id="push-count"></span></a>
+                        <a class="btn" id="to-push" href="#/push">Apply to Spotify <span class="count" id="push-count"></span></a>
                     </div>
                     <div class="toolbar-row">
                         <input id="search" type="search" placeholder="Search title, artist, album  ( / )" value="${esc(state.q)}">
@@ -148,7 +148,7 @@ function cardHtml(t, i) {
                 ${pendingN ? `<button class="btn" data-rest="approved">Approve the rest (${pendingN})</button>
                 <button class="btn" data-rest="declined">Decline the rest</button>`
                 : '<span class="muted small">All decided</span>'}
-                ${approvedN ? `<a class="small" href="#/push">${approvedN} approved → Add to Spotify</a>` : ''}
+                ${approvedN ? `<a class="small" href="#/push">${approvedN} approved → Apply to Spotify</a>` : ''}
             </div>
         </div>
     </article>`;

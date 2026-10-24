@@ -18,8 +18,12 @@ at `http://127.0.0.1:8080`.
 5. **Review**: go song by song (To review / Reviewed tabs). Approve or decline each suggested playlist, or use
    "Approve the rest / Decline the rest" on a card. Each card has a Spotify player with a seek bar, ±15s and
    jump-to-middle (Space, ←/→, m); full songs if you're logged in to Spotify in that browser, else 30s previews.
-6. **Add to Spotify**: every approved song, grouped by playlist. Undo any approval, then one button adds them all.
-   Add-only: nothing is removed from any playlist or from Liked Songs; songs already there are skipped.
+6. **Apply to Spotify**: every decision in one place, grouped by playlist: songs to add (approved in Review) and
+   songs to remove (from Playlist check). Undo any of them, then one button applies them all. Liked Songs is never
+   touched; removed songs can be put back at their old position.
+7. **Playlist check**: scores every song already in your vibe playlists (0-100) on how well it fits, with a reason and
+   better-fitting playlists. Review the ones under a threshold you choose: Keep, Remove, or Move to another playlist.
+   Vibe playlist pages also show each song's fit score.
 
 **Explore**
 - **Library**: every liked song with genre/tag, artist and date filters, duplicate hiding, sortable columns,
@@ -68,7 +72,8 @@ python enrich.py                 # tags + lyrics
 python enrich.py retry-lyrics    # re-try songs that had no lyrics
 python profiles.py               # draft vibe profiles
 python classify.py pilot | all   # classifier test run / full run (uses OpenAI credit)
-python push.py                   # add approved songs to their Spotify playlists
+python fitcheck.py [vibe_key]    # score how well songs fit the playlists they're in (uses OpenAI credit)
+python push.py                   # apply queued removals and additions to Spotify
 python -m pytest                 # tests (no network calls)
 ```
 

@@ -151,10 +151,13 @@ def playlist_tracks(conn, playlist_id):
     tracks = conn.execute('SELECT t.track_id, t.name, t.artists_json, t.album, t.release_date, t.uri, pi.added_at '
                           'FROM playlist_items pi JOIN tracks t USING(track_id) WHERE pi.playlist_id = ? '
                           'ORDER BY pi.added_at', (playlist_id,)).fetchall()
+    vibe = (conn.execute('SELECT vibe_key FROM playlists WHERE playlist_id = ?', (playlist_id,)).fetchone() or [None])[0]
+    fits = dict(conn.execute('SELECT track_id, fit FROM fit_checks WHERE vibe_key = ?', (vibe,))) if vibe else {}
     rows = []
     for t in tracks:
         r = _row(t, genres, tags, membership)
         r['liked'] = r['track_id'] in liked
+        r['fit'] = fits.get(r['track_id'])
         rows.append(r)
     used = {p for r in rows for p in r['playlists']}
     return {'tracks': rows, 'playlist_names': {p: names[p] for p in used}}

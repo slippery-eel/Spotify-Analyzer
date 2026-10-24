@@ -18,10 +18,12 @@ live in the same app.
 - [x] 2. enrich.py (Last.fm tags + LRCLIB lyrics); coverage report
 - [x] 3. profiles.py + Profiles page: drafts built, I review/edit each one in the app ⏸
 - [x] 4. classify.py pilot (~60 songs) + accuracy check + full-run cost estimate ⏸
-- [ ] 4b. Full classification of remaining liked songs (I start it from Pipeline)
+- [x] 4b. Full classification of remaining liked songs
 - [x] 5. Review UI
 - [x] 6. push.py + Add to Spotify page; Review cleanup (To review/Reviewed tabs, per-card approve/decline the rest)
-- [ ] 6b. First real push, triggered by me
+- [ ] 6b. First real apply (adds/removals), triggered by me
+- [x] 8. Playlist check: fit scores for songs already in vibe playlists; keep/remove/move; removals via Apply page with put back
+- [ ] 8b. Full fit check of all vibe playlists (Spooky done as a test)
 - [ ] 7. Docs: review section below
 
 ## Merge into one app

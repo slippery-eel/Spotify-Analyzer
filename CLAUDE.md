@@ -62,19 +62,24 @@ The original static analyzer (`index.html`/`script.js`/`styles.css`) was retired
   skipped; re-classifying replaces only undecided rows. Pilot = 40 unsorted + 20 holdout songs (never prompt examples);
   report (recall/precision/misses/cost estimate) lives in `meta.pilot_report`. Pilot recall went 30% -> 60% once base rates,
   range examples and artist history were added.
+- **`fitcheck.py`**: rates songs already in each vibe playlist (0-100 + reason + better playlists) using classify.py's
+  `playlist_block`/`song_entries`/`call_model` with its own instruction and schema; batches of 25 from one playlist.
+  Results in `fit_checks` (status `unreviewed|keep|remove|removed`, `move_to`, `position` for put back); re-checks keep decisions.
 - **`jobs.py`**: one background job at a time (thread), history in `job_runs`. Progress is in-memory only: a job holds an
   open write transaction, so writing progress to the DB from the same thread would deadlock on SQLite's lock.
 - **`library.py`**: Library/Playlists queries, dedupe (`sync.normalize_for_dedup`, same key as the old app), analytics, Save as Playlist.
 - **`review.py`**: review queue (`todo` = songs with a pending suggestion, `done` = all decided), decisions, push queue
-  (approved rows grouped by playlist) and recently added. `added` rows are locked; manual approvals create rows undo can remove.
-- **`push.py`**: adds approved suggestions to their playlists (`POST /playlists/{id}/items`, batches of 100). Re-syncs those
-  playlists first; songs already there (incl. other versions) are marked added without a call. Each batch is marked as it
-  succeeds, so a failed run can be re-run. Add-only; never removes anything.
+  (approved rows grouped by playlist), recently added, and the fit-check queue/decisions/remove queue (a move also
+  writes an approved suggestion with reason "Moved from X"). `added` rows are locked; manual approvals create rows undo can remove.
+- **`push.py`**: applies decisions: removals first (`DELETE /playlists/{id}/items`, `{"items":[{"uri"}]}`), recording each
+  song's position and writing a declined suggestion so it's never re-suggested; then additions (`POST .../items`).
+  Batches of 100, each marked as it succeeds, so a failed run can be re-run. `restore()` puts a removed song back at its
+  old position. Never touches Liked Songs.
 - **`server.py`**: `/login`, `/callback`, and the JSON API (`/api/overview`, `/api/jobs`, `/api/library`, `/api/playlists`,
-  `/api/save-playlist`, `/api/profiles[/vibe]`, `/api/classify/pilot`, `/api/push`, `/api/stats`, `/api/queue`, `/api/decide`, `/api/logout`).
+  `/api/save-playlist`, `/api/profiles[/vibe]`, `/api/classify/pilot`, `/api/fit` (+`/decide`), `/api/apply` (+`/restore`), `/api/stats`, `/api/queue`, `/api/decide`, `/api/logout`).
 
 ### Frontend (`web/`)
-- **`index.html`** + **`app.js`**: shell, hash router (`#/`, `#/pipeline[/step]`, `#/profiles[/vibe]`, `#/review[/vibe]`, `#/push`, `#/library[/not_in_playlists]`,
+- **`index.html`** + **`app.js`**: shell, hash router (`#/`, `#/pipeline[/step]`, `#/profiles[/vibe]`, `#/review[/vibe]`, `#/check[/vibe]`, `#/push`, `#/library[/not_in_playlists]`,
   `#/playlists[/id]`, `#/account`), nav badges, and the jobs dock (polls `/api/jobs` while a job runs).
 - **`views/*.js`**: one ES module per page exporting `mount(el, params)` and optional `unmount()` / `onJobDone()`.
   `steps.js` defines the pipeline steps shared by Home and Pipeline; `save.js` is the Save as Playlist modal.

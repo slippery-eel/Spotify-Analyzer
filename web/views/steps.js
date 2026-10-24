@@ -66,10 +66,30 @@ export const STEPS = [
         done: (o) => o.classified > 0 && !o.review.todo,
     },
     {
-        key: 'push', title: 'Add approved songs to Spotify', href: '#/push',
-        what: 'Adds approved songs to their playlists. Add-only: nothing is removed from Liked Songs.',
-        status: (o) => `${o.review.approved} approved and waiting · ${o.review.added} added so far`,
-        done: (o) => o.review.added > 0 && !o.review.approved,
+        key: 'push', title: 'Apply changes to Spotify', href: '#/push',
+        what: 'Sends your decisions to Spotify in one go: approved songs are added, songs you removed in Playlist check '
+            + 'are taken out of that playlist. Liked Songs is never touched.',
+        status: (o) => `${o.review.approved} to add · ${o.fit.remove} to remove · ${o.review.added} added so far`,
+        done: (o) => (o.review.added > 0 || o.fit.removed > 0) && !o.review.approved && !o.fit.remove,
+    },
+    {
+        key: 'fitcheck', title: 'Check playlist fit', job: 'fitcheck', needsKey: 'openai', href: '#/check',
+        openLabel: 'Open Playlist check',
+        what: 'Scores every song already in your vibe playlists on how well it fits, so you can keep, remove or move '
+            + 'the ones that don’t belong. Removals go through Apply changes like everything else.',
+        runLabel: (o) => o.fit.checked ? `Check ${o.fit.size - o.fit.checked} new songs` : 'Check all playlists',
+        confirm: (o) => ({
+            title: 'Check all vibe playlists?',
+            body: `This sends ${o.fit.size - o.fit.checked} songs to OpenAI to score how well each fits its playlist.
+                Estimated cost: about <strong>$${Math.max(0.01, (o.fit.size - o.fit.checked) * 0.00015).toFixed(2)}</strong>.
+                Nothing changes in Spotify.`,
+            ok: 'Start',
+        }),
+        status: (o) => o.fit.checked
+            ? `${o.fit.checked} of ${o.fit.size} songs checked · ${o.fit.flagged} may not fit · ${o.fit.removed} removed`
+            : `Not run yet (${o.fit.size} songs, ≈ $${(o.fit.size * 0.00015).toFixed(2)})`,
+        done: (o) => o.fit.checked >= o.fit.size && !o.fit.flagged,
+        showOpen: (o) => o.fit.checked > 0,
     },
 ];
 

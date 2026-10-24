@@ -58,14 +58,15 @@ async function renderDetail(playlists, id) {
                 <div class="step-actions">
                     <a class="btn" href="https://open.spotify.com/playlist/${p.playlist_id}" target="_blank" rel="noopener">Open in Spotify ↗</a>
                     ${data.tracks.length ? '<button class="btn" id="copy">Copy song list</button>' : ''}
-                    ${p.vibe_key ? `<a class="btn" href="#/review/${p.vibe_key}">Review suggestions for this playlist</a>` : ''}
+                    ${p.vibe_key ? `<a class="btn" href="#/review/${p.vibe_key}">Review suggestions for this playlist</a>
+                    <a class="btn" href="#/check/${p.vibe_key}">Check which songs don't fit</a>` : ''}
                 </div>
             </div>
         </header>
         ${!p.is_owned ? `<div class="empty">Spotify only lets apps read the songs of playlists you own or collaborate on,
             so this followed playlist's songs can't be shown here.</div>` : `
         <div class="table-wrap"><table class="tracks">
-            <thead><tr><th>#</th><th>Track</th><th>Artists</th><th>Genres / tags</th><th>Liked</th><th>Also in</th><th>Added</th><th></th></tr></thead>
+            <thead><tr><th>#</th><th>Track</th><th>Artists</th><th>Genres / tags</th>${p.vibe_key ? '<th title="How well it fits this playlist (Playlist check)">Fit</th>' : ''}<th>Liked</th><th>Also in</th><th>Added</th><th></th></tr></thead>
             <tbody>${data.tracks.map((t, i) => {
                 const others = t.playlists.filter(x => x !== id);
                 return `<tr>
@@ -73,6 +74,7 @@ async function renderDetail(playlists, id) {
                     <td class="t-name">${esc(t.name)}</td>
                     <td>${esc(t.artists.join(', '))}</td>
                     <td class="t-genres">${esc((t.genres.length ? t.genres : t.tags).slice(0, 3).join(', ')) || '<span class="muted">—</span>'}</td>
+                    ${p.vibe_key ? `<td class="num ${t.fit == null ? 'muted' : t.fit < 40 ? 'fit-bad-text' : t.fit < 60 ? 'fit-meh-text' : ''}">${t.fit ?? '—'}</td>` : ''}
                     <td>${t.liked ? '♥' : '<span class="muted">—</span>'}</td>
                     <td class="num" title="${esc(others.map(x => names[x]).join('\n'))}">${others.length || '<span class="muted">0</span>'}</td>
                     <td class="nowrap">${fmtDate(t.added_at)}</td>

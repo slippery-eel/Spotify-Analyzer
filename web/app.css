@@ -224,6 +224,26 @@ table.tracks { width: 100%; border-collapse: collapse; }
 .pilot summary { cursor: pointer; }
 table.tracks.compact { margin-top: 8px; font-size: 13px; }
 
+/* ---------- playlist check ---------- */
+.fit-box { margin: 8px 0; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); border-left: 4px solid var(--border); }
+.fit-box.fit-bad { border-left-color: var(--red); }
+.fit-box.fit-meh { border-left-color: var(--warn); }
+.fit-box.fit-ok { border-left-color: var(--green); }
+.fit-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.fit-score { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.fit-bad .fit-score { color: var(--red); }
+.fit-meh .fit-score { color: var(--warn); }
+.fit-ok .fit-score { color: var(--green); }
+.btn-danger { border-color: var(--red); color: var(--red); }
+.btn-danger:hover:not(:disabled) { background: var(--red); color: var(--on-accent); }
+.card-foot select { max-width: 180px; }
+.threshold { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.threshold input { width: 120px; }
+.minus { color: var(--red); margin-right: 6px; }
+.fit-bad-text { color: var(--red); font-weight: 600; }
+.fit-meh-text { color: var(--warn); }
+.remove-group h2 .count { color: var(--red); }
+
 /* ---------- add to spotify ---------- */
 .push-group h2 { display: flex; align-items: baseline; gap: 8px; }
 .push-list { list-style: none; display: flex; flex-direction: column; }
